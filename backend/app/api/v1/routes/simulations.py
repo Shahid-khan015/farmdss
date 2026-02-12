@@ -14,7 +14,7 @@ from app.crud.operating_condition import operating_condition_crud
 from app.crud.simulation import simulation_crud
 from app.crud.tractor import tractor_crud
 from app.crud.tire_specification import tire_crud
-from app.models.enums import DriveMode
+from app.models.enums import SoilTexture
 from app.schemas.common import DeleteResponse, PaginatedResponse
 from app.schemas.simulation import SimulationRead, SimulationRunRequest
 
@@ -113,7 +113,9 @@ def run_simulation(payload: SimulationRunRequest, db: Session = Depends(get_db))
         ("front_axle_weight", tractor.front_axle_weight),
         ("rear_axle_weight", tractor.rear_axle_weight),
         ("hitch_distance_from_rear", tractor.hitch_distance_from_rear),
+        ("cg_distance_from_rear", tractor.cg_distance_from_rear),
         ("transmission_efficiency", tractor.transmission_efficiency),
+        ("power_reserve", tractor.power_reserve),
     ]
     missing_tractor = [k for k, v in required_tractor if v is None]
     if missing_tractor:
@@ -139,11 +141,12 @@ def run_simulation(payload: SimulationRunRequest, db: Session = Depends(get_db))
         )
 
     required_cond = [
+        ("soil_texture", soil_texture),
         ("cone_index", cone_index),
         ("depth", depth),
         ("speed", speed),
         ("field_area", field_area),
-        ("number_of_turns", number_of_turns),
+        ("field_width", field_width),
     ]
     missing_cond = [k for k, v in required_cond if v is None]
     if missing_cond:
@@ -152,10 +155,54 @@ def run_simulation(payload: SimulationRunRequest, db: Session = Depends(get_db))
             detail=f"Operating conditions missing required fields for simulation: {missing_cond}",
         )
 
-    if tires.rear_overall_diameter is None or tires.rear_section_width is None:
+    required_tires = [
+        ("front_overall_diameter", tires.front_overall_diameter),
+        ("rear_overall_diameter", tires.rear_overall_diameter),
+        ("front_section_width", tires.front_section_width),
+        ("rear_section_width", tires.rear_section_width),
+    ]
+    missing_tires = [k for k, v in required_tires if v is None]
+    if missing_tires:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Tire specs missing rear_overall_diameter or rear_section_width",
+            detail=f"Tire specs missing required fields for legacy simulation: {missing_tires}",
+        )
+
+    front_rr_m = (
+        float(tires.front_rolling_radius) / 1000.0
+        if tires.front_rolling_radius is not None
+        else None
+    )
+    rear_rr_m = (
+        float(tires.rear_rolling_radius) / 1000.0
+        if tires.rear_rolling_radius is not None
+        else None
+    )
+    if front_rr_m is None:
+        if tires.front_static_loaded_radius is not None:
+            front_rr_m = float(tires.front_static_loaded_radius) / 1000.0
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Tire specs missing front rolling radius (front_rolling_radius/front_static_loaded_radius)",
+            )
+    if rear_rr_m is None:
+        if tires.rear_static_loaded_radius is not None:
+            rear_rr_m = float(tires.rear_static_loaded_radius) / 1000.0
+        elif tractor.rear_wheel_rolling_radius is not None:
+            rear_rr_m = float(tractor.rear_wheel_rolling_radius)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Missing rear rolling radius (tire rear_rolling_radius/rear_static_loaded_radius or tractor rear_wheel_rolling_radius)",
+            )
+
+    try:
+        soil_texture_enum = soil_texture if isinstance(soil_texture, SoilTexture) else SoilTexture(str(soil_texture))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid soil_texture '{soil_texture}' for legacy DSS",
         )
 
     perf_inputs = PerformanceInputs(
@@ -164,11 +211,16 @@ def run_simulation(payload: SimulationRunRequest, db: Session = Depends(get_db))
         front_axle_weight_kg=float(tractor.front_axle_weight),
         rear_axle_weight_kg=float(tractor.rear_axle_weight),
         hitch_distance_from_rear_m=float(tractor.hitch_distance_from_rear),
-        drive_mode=tractor.drive_mode if isinstance(tractor.drive_mode, DriveMode) else DriveMode(tractor.drive_mode),
+        cg_distance_from_rear_m=float(tractor.cg_distance_from_rear),
         transmission_efficiency_pct=float(tractor.transmission_efficiency),
-        tire_type=tires.tire_type,
+        power_reserve_pct=float(tractor.power_reserve),
+        front_rolling_radius_m=front_rr_m,
+        rear_rolling_radius_m=rear_rr_m,
+        front_overall_diameter_m=float(tires.front_overall_diameter) / 1000.0,
         rear_overall_diameter_m=float(tires.rear_overall_diameter) / 1000.0,
+        front_section_width_m=float(tires.front_section_width) / 1000.0,
         rear_section_width_m=float(tires.rear_section_width) / 1000.0,
+        implement_type=implement.implement_type,
         width_m=float(implement.width),
         weight_kg=float(implement.weight),
         cg_distance_from_hitch_m=float(implement.cg_distance_from_hitch),
@@ -176,14 +228,18 @@ def run_simulation(payload: SimulationRunRequest, db: Session = Depends(get_db))
         asae_param_a=float(implement.asae_param_a),
         asae_param_b=float(implement.asae_param_b),
         asae_param_c=float(implement.asae_param_c),
+        soil_texture=soil_texture_enum,
         cone_index_kpa=float(cone_index),
         depth_cm=float(depth),
         speed_kmh=float(speed),
         field_area_ha=float(field_area),
-        number_of_turns=int(number_of_turns),
+        field_width_m=float(field_width),
     )
 
-    results = calculate_performance(perf_inputs)
+    try:
+        results = calculate_performance(perf_inputs)
+    except (ValueError, ZeroDivisionError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
     # Persist simulation + key result columns
     sim = simulation_crud.create(
@@ -197,7 +253,7 @@ def run_simulation(payload: SimulationRunRequest, db: Session = Depends(get_db))
             "field_area": field_area,
             "field_length": field_length,
             "field_width": field_width,
-            "number_of_turns": number_of_turns,
+            "number_of_turns": int(results.get("legacy_number_of_turns")) if results.get("legacy_number_of_turns") is not None else number_of_turns,
             "soil_texture": soil_texture,
             "soil_hardness": soil_hardness,
             "results": results,

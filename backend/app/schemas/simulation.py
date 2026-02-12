@@ -44,7 +44,6 @@ class SimulationRunRequest(BaseModel):
             ("field_area", self.field_area),
             ("field_length", self.field_length),
             ("field_width", self.field_width),
-            ("number_of_turns", self.number_of_turns),
         ]
         missing = [k for k, v in required if v is None]
         if missing:
