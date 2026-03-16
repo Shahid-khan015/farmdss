@@ -1,0 +1,55 @@
+import React from 'react';
+import { View } from 'react-native';
+import { Text } from 'react-native-paper';
+
+import { Card } from '../common/Card';
+import { fmtNum } from '../../utils/formatters';
+
+function toFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function ResultsDisplay({ results }: { results: any }) {
+  if (!results) return null;
+  const draftN = toFiniteNumber(results.draft_force);
+  const draftKN = draftN === null ? null : draftN / 1000;
+  return (
+    <View style={{ gap: 12 }}>
+      <Card>
+        <Text variant="titleMedium">Performance metrics</Text>
+        <Text>Draft requirement: {fmtNum(draftKN, 2)} kN</Text>
+        <Text>Drawbar power required: {fmtNum(toFiniteNumber(results.drawbar_power), 2)} kW</Text>
+        <Text>Drawbar power: {fmtNum(toFiniteNumber(results.drawbar_power), 2)} kW</Text>
+        <Text>Slip: {fmtNum(toFiniteNumber(results.slip), 1)} %</Text>
+        <Text>Coefficient of net traction: {fmtNum(toFiniteNumber(results.coefficient_net_traction), 3)}</Text>
+        <Text>Motion resistance ratio: {fmtNum(toFiniteNumber(results.motion_resistance), 3)}</Text>
+        <Text>Tractive efficiency: {fmtNum(toFiniteNumber(results.traction_efficiency), 1)} %</Text>
+        <Text>Front weight utilization: {fmtNum(toFiniteNumber(results.front_weight_utilization), 2)}</Text>
+        <Text>Power Used: {fmtNum(toFiniteNumber(results.power_utilization), 1)} %</Text>
+      </Card>
+
+      <Card>
+        <Text variant="titleMedium">Field performance</Text>
+        <Text>Theoretical field capacity: {fmtNum(toFiniteNumber(results.field_capacity_theoretical), 2)} ha/h</Text>
+        <Text>Actual field capacity: {fmtNum(toFiniteNumber(results.field_capacity_actual), 2)} ha/h</Text>
+        <Text>Field efficiency: {fmtNum(toFiniteNumber(results.field_efficiency), 1)} %</Text>
+        <Text>Total time requirement: {fmtNum(toFiniteNumber(results.total_time_hours), 2)} h</Text>
+      </Card>
+
+      <Card>
+        <Text variant="titleMedium">Fuel & overall</Text>
+        <Text>Specific fuel consumption: {fmtNum(toFiniteNumber(results.specific_fuel_consumption), 3)} l/kW-h</Text>
+        <Text>Fuel consumption: {fmtNum(toFiniteNumber(results.fuel_consumption_per_hectare), 2)} l/ha</Text>
+        <Text>Overall efficiency: {fmtNum(toFiniteNumber(results.overall_efficiency), 1)} %</Text>
+      </Card>
+
+      <Card>
+        <Text variant="titleMedium">Ballast</Text>
+        <Text>Front ballast required: {fmtNum(toFiniteNumber(results.ballast_front_required), 1)} kg</Text>
+        <Text>Rear ballast required: {fmtNum(toFiniteNumber(results.ballast_rear_required), 1)} kg</Text>
+      </Card>
+    </View>
+  );
+}
