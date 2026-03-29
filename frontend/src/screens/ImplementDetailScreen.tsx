@@ -272,4 +272,3 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs / 2,
   },
 });
-
