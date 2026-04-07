@@ -18,6 +18,10 @@ class TractorBase(BaseModel):
     pto_power: Optional[Decimal] = Field(default=None, ge=0)
     rated_engine_speed: Optional[int] = Field(default=None, ge=0)
     max_engine_torque: Optional[Decimal] = Field(default=None, ge=0)
+    pto_rpm_min: Optional[int] = None
+    pto_rpm_max: Optional[int] = None
+    tow_capacity_kg: Optional[float] = None
+    hitch_type: Optional[str] = None
 
     wheelbase: Optional[Decimal] = Field(default=None, ge=0)
     front_axle_weight: Optional[Decimal] = Field(default=None, ge=0)
@@ -47,6 +51,10 @@ class TractorUpdate(BaseModel):
     pto_power: Optional[Decimal] = Field(default=None, ge=0)
     rated_engine_speed: Optional[int] = Field(default=None, ge=0)
     max_engine_torque: Optional[Decimal] = Field(default=None, ge=0)
+    pto_rpm_min: Optional[int] = None
+    pto_rpm_max: Optional[int] = None
+    tow_capacity_kg: Optional[float] = None
+    hitch_type: Optional[str] = None
 
     wheelbase: Optional[Decimal] = Field(default=None, ge=0)
     front_axle_weight: Optional[Decimal] = Field(default=None, ge=0)

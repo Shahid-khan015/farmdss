@@ -14,7 +14,9 @@ from app.crud.operating_condition import operating_condition_crud
 from app.crud.simulation import simulation_crud
 from app.crud.tractor import tractor_crud
 from app.crud.tire_specification import tire_crud
+from app.middleware.auth import get_current_user
 from app.models.enums import SoilTexture
+from app.models.user import User
 from app.schemas.common import DeleteResponse, PaginatedResponse
 from app.schemas.simulation import SimulationRead, SimulationRunRequest
 
@@ -23,6 +25,7 @@ router = APIRouter()
 
 @router.get("", response_model=PaginatedResponse[SimulationRead])
 def list_simulations(
+    _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     tractor_id: Optional[uuid.UUID] = Query(default=None),
     implement_id: Optional[uuid.UUID] = Query(default=None),
@@ -42,6 +45,7 @@ def compare_simulations(
         description="Simulation IDs to compare (repeat query param).",
         max_length=10,
     ),
+    _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     # simple compare: return list of SimulationRead for requested ids (client can compare)
@@ -58,7 +62,11 @@ def compare_simulations(
 
 
 @router.get("/{id}", response_model=SimulationRead)
-def get_simulation(id: uuid.UUID, db: Session = Depends(get_db)):
+def get_simulation(
+    id: uuid.UUID,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     obj = simulation_crud.get(db, id=id)
     if not obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Simulation not found")
@@ -66,7 +74,11 @@ def get_simulation(id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.post("/run", response_model=SimulationRead, status_code=status.HTTP_201_CREATED)
-def run_simulation(payload: SimulationRunRequest, db: Session = Depends(get_db)):
+def run_simulation(
+    payload: SimulationRunRequest,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     tractor = tractor_crud.get_with_tires(db, id=payload.tractor_id)
     if not tractor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tractor not found")
@@ -277,7 +289,11 @@ def run_simulation(payload: SimulationRunRequest, db: Session = Depends(get_db))
 
 
 @router.delete("/{id}", response_model=DeleteResponse)
-def delete_simulation(id: uuid.UUID, db: Session = Depends(get_db)):
+def delete_simulation(
+    id: uuid.UUID,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     obj = simulation_crud.remove(db, id=id)
     if not obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Simulation not found")

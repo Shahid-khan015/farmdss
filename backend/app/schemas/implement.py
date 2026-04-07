@@ -22,6 +22,11 @@ class ImplementBase(BaseModel):
     asae_param_a: Optional[Decimal] = Field(default=None)
     asae_param_b: Optional[Decimal] = Field(default=None)
     asae_param_c: Optional[Decimal] = Field(default=None)
+    working_width_m: Optional[float] = None
+    hitch_type: Optional[str] = None
+    preset_speed_kmh: Optional[float] = None
+    preset_depth_cm: Optional[float] = None
+    preset_gearbox_temp_max_c: Optional[float] = None
 
     is_library: bool = False
 
@@ -45,8 +50,12 @@ class ImplementUpdate(BaseModel):
     asae_param_a: Optional[Decimal] = None
     asae_param_b: Optional[Decimal] = None
     asae_param_c: Optional[Decimal] = None
+    working_width_m: Optional[float] = None
+    hitch_type: Optional[str] = None
+    preset_speed_kmh: Optional[float] = None
+    preset_depth_cm: Optional[float] = None
+    preset_gearbox_temp_max_c: Optional[float] = None
 
 
 class ImplementRead(UUIDResponse, Timestamped, ImplementBase):
     model_config = ConfigDict(from_attributes=True)
-
