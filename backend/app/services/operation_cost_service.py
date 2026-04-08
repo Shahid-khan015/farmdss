@@ -50,13 +50,13 @@ def compute_session_cost(session: OperationSession, db: Session) -> None:
     if session.area_ha is None or session.area_ha == 0:
         session.total_cost_inr = None
         session.charge_per_ha_applied = charge.charge_per_ha
-        session.cost_note = "Area not computed — cost pending"
+        session.cost_note = "Area not computed - cost pending"
         return
 
     total_cost = round(charge.charge_per_ha * session.area_ha, 2)
     session.total_cost_inr = total_cost
     session.charge_per_ha_applied = charge.charge_per_ha
     session.cost_note = (
-        f"{session.operation_type}: ₹{charge.charge_per_ha}/ha "
-        f"× {round(session.area_ha, 2)} ha = ₹{total_cost}"
+        f"{session.operation_type}: Rs {charge.charge_per_ha}/ha "
+        f"x {round(session.area_ha, 2)} ha = Rs {total_cost}"
     )

@@ -24,7 +24,7 @@ import {
 import { Input } from '../components/common/Input';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ErrorMessage } from '../components/common/ErrorMessage';
-import { Card } from '../components/common/Card';
+import { ListEntityCard } from '../components/common/ListEntityCard';
 import { TractorCard } from '../components/tractor/TractorCard';
 import { useTractors, useDeleteTractor } from '../hooks/useTractors';
 import type { Tractor } from '../types/tractor';
@@ -204,62 +204,54 @@ function LibraryTractorCard({
       : null;
 
   return (
-    <Card
-      variant="elevated"
-      spacing="default"
-      pressable
+    <ListEntityCard
+      title={tractor.name}
+      subtitle={`${tractor.manufacturer ? `${tractor.manufacturer} - ` : ''}${tractor.model}`}
+      badge={{
+        icon: <BookOpen size={14} color={colors.primary} />,
+        label: 'Library',
+        textColor: colors.primary,
+        backgroundColor: `${colors.primary}15`,
+      }}
+      specs={[
+        ...(tractor.pto_power != null
+          ? [
+              {
+                icon: <Bolt size={16} color={colors.primary} />,
+                text: `${fmtNum(tractor.pto_power, 2)} kW`,
+              },
+            ]
+          : []),
+        {
+          icon: <TractorIcon size={16} color={colors.primary} />,
+          text: tractor.drive_mode,
+        },
+        ...(totalWeight != null
+          ? [
+              {
+                icon: <PackageIcon size={16} color={colors.primary} />,
+                text: `${fmtNum(totalWeight, 2)} kg`,
+              },
+            ]
+          : []),
+      ]}
+      actions={[
+        {
+          label: 'Use in Simulation',
+          icon: <Check size={16} color="#FFFFFF" />,
+          onPress: onUse,
+          variant: 'solid',
+        },
+        {
+          label: 'Copy & Customize',
+          icon: <Copy size={16} color={colors.primary} />,
+          onPress: onCopy,
+          variant: 'outline',
+        },
+      ]}
       onPress={onDetails}
-      style={styles.libraryCard}
-      accessible
       accessibilityLabel={`${tractor.name} library tractor`}
-    >
-      <View style={styles.cardContent}>
-        <View style={styles.cardHeader}>
-          <View style={styles.cardHeaderText}>
-            <Text style={styles.cardTitle}>{tractor.name}</Text>
-            <Text style={styles.cardSubtitle}>
-              {tractor.manufacturer ? `${tractor.manufacturer} - ` : ''}
-              {tractor.model}
-            </Text>
-          </View>
-          <View style={styles.libraryBadge}>
-            <BookOpen size={14} color={colors.primary} />
-            <Text style={styles.libraryBadgeText}>Library</Text>
-          </View>
-        </View>
-
-        <View style={styles.specRow}>
-          {tractor.pto_power != null && (
-            <View style={styles.specItem}>
-              <Bolt size={16} color={colors.primary} />
-              <Text style={styles.specText}>{fmtNum(tractor.pto_power, 2)} kW</Text>
-            </View>
-          )}
-          <View style={styles.specItem}>
-            <TractorIcon size={16} color={colors.primary} />
-            <Text style={styles.specText}>{tractor.drive_mode}</Text>
-          </View>
-          {totalWeight != null && (
-            <View style={styles.specItem}>
-              <PackageIcon size={16} color={colors.primary} />
-              <Text style={styles.specText}>{fmtNum(totalWeight, 2)} kg</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.libraryActions}>
-          <Pressable style={[styles.actionButton, styles.primaryAction]} onPress={onUse}>
-            <Check size={16} color="#FFFFFF" />
-            <Text style={styles.primaryActionText}>Use in Simulation</Text>
-          </Pressable>
-
-          <Pressable style={[styles.actionButton, styles.secondaryAction]} onPress={onCopy}>
-            <Copy size={16} color={colors.primary} />
-            <Text style={styles.secondaryActionText}>Copy & Customize</Text>
-          </Pressable>
-        </View>
-      </View>
-    </Card>
+    />
   );
 }
 
@@ -359,98 +351,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     color: '#6B7280',
-  },
-  libraryCard: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-  },
-  cardContent: {
-    gap: 16,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  cardHeaderText: {
-    flex: 1,
-  },
-  cardTitle: {
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  cardSubtitle: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#6B7280',
-  },
-  libraryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: `${colors.primary}15`,
-  },
-  libraryBadgeText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  specRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-  },
-  specItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  specText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#4B5563',
-  },
-  libraryActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 12,
-  },
-  primaryAction: {
-    backgroundColor: colors.primary,
-  },
-  primaryActionText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '600',
-  },
-  secondaryAction: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-  },
-  secondaryActionText: {
-    color: colors.primary,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '500',
   },
   emptyState: {
     alignItems: 'center',

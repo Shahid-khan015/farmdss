@@ -99,6 +99,11 @@ class AlertResponse(BaseModel):
     created_at: datetime
 
 
+class AlertListResponse(BaseModel):
+    total: int
+    items: list[AlertResponse]
+
+
 class AlertSummaryItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -110,6 +115,26 @@ class AlertSummaryItem(BaseModel):
     message: str
     acknowledged: bool
     created_at: datetime
+
+
+class SessionMetricSummary(BaseModel):
+    feed_key: str
+    label: str
+    unit: str
+    samples: int
+    last_value: Optional[float] = None
+    avg_value: Optional[float] = None
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+
+
+class PresetSummaryItem(BaseModel):
+    parameter_name: str
+    target_value: Optional[float] = None
+    actual_value: Optional[float] = None
+    unit: str
+    deviation_pct: Optional[float] = None
+    status: str
 
 
 class PresetValueResponse(BaseModel):
@@ -133,6 +158,7 @@ class SessionResponse(BaseModel):
     tractor_id: uuid.UUID
     implement_id: Optional[uuid.UUID]
     operator_id: uuid.UUID
+    operator_name: Optional[str] = None
     tractor_owner_id: Optional[uuid.UUID]
     client_farmer_id: Optional[uuid.UUID]
     operation_type: str
@@ -142,6 +168,8 @@ class SessionResponse(BaseModel):
     gps_tracking_enabled: bool
     area_ha: Optional[float]
     implement_width_m: Optional[float]
+    alerts_count: Optional[int] = None
+    unacknowledged_alerts: Optional[int] = None
     total_cost_inr: Optional[float] = None
     charge_per_ha_applied: Optional[float] = None
     cost_note: Optional[str] = None
@@ -153,6 +181,7 @@ class SessionDetailResponse(SessionResponse):
 
     preset_values: list[PresetValueResponse]
     alerts: list[AlertResponse]
+    field_observations: list["FieldObservationResponse"] = []
     total_duration_minutes: Optional[float]
 
 
@@ -165,6 +194,7 @@ class SessionSummaryReport(BaseModel):
     tractor_id: str
     implement_id: Optional[str]
     operator_id: str
+    operator_name: Optional[str] = None
     started_at: datetime
     ended_at: Optional[datetime]
     duration_minutes: Optional[float]
@@ -173,6 +203,10 @@ class SessionSummaryReport(BaseModel):
     charge_per_ha_applied: Optional[float]
     cost_note: Optional[str]
     alerts: list[AlertSummaryItem]
+    field_observations: list["FieldObservationResponse"] = []
+    observations_count: int = 0
+    metrics: list[SessionMetricSummary] = []
+    preset_summaries: list[PresetSummaryItem] = []
     total_alerts: int
     unacknowledged_alerts: int
 
@@ -221,3 +255,7 @@ class FuelLogResponse(BaseModel):
     total_cost: Optional[float]
     notes: Optional[str]
     created_at: datetime
+
+
+SessionDetailResponse.model_rebuild()
+SessionSummaryReport.model_rebuild()

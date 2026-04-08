@@ -578,16 +578,17 @@ export function TractorFormScreen() {
           onPress={handleSave}
         >
           {id ? 'Update Tractor' : isCopyMode ? 'Save to My Tractors' : 'Create Tractor'}
-        </Button><Button
-  variant="outline"
-  size="lg"
-  fullWidth
-  disabled={saving}
-  style={styles.cancelButtonOutline}
-  onPress={() => nav.canGoBack() ? nav.goBack() : nav.navigate('TractorList')}
->
-  <Text style={styles.cancelTextOutline}>Cancel</Text>
-</Button>
+        </Button>
+        <Button
+          variant="outline"
+          size="lg"
+          fullWidth
+          style={styles.matchingOutlineButton}
+          disabled={saving}
+          onPress={() => (nav.canGoBack() ? nav.goBack() : nav.navigate('TractorList'))}
+        >
+          Cancel
+        </Button>
       </View>
     </ScrollView>
   );
@@ -606,10 +607,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxl,
     gap: spacing.md,
   },
-  cancelButtonFix: {
-  backgroundColor: 'transparent',
-},
-
   backButton: {
     width: 44,
     height: 44,
@@ -620,19 +617,6 @@ const styles = StyleSheet.create({
   },
   headerContent: {
     flex: 1,
-  },cancelButtonOutline: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,                 // Thinner border is more elegant
-    borderColor: colors.primary,    // Your Theme Green
-    borderRadius: borderRadius.md,
-    marginTop: spacing.sm,
-  },
-  cancelTextOutline: {
-    color: colors.primary,          // Your Theme Green
-    fontWeight: '600',
-    textAlign: 'center',
-    fontSize: 16,
-    letterSpacing: 0.5,             // Slight spacing makes caps look better
   },
   headerTitle: {
     ...typography.h3,
@@ -704,5 +688,11 @@ const styles = StyleSheet.create({
   footer: {
     gap: spacing.md,
     marginTop: spacing.xl,
+  },
+  matchingOutlineButton: {
+    minHeight: 48,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
   },
 });

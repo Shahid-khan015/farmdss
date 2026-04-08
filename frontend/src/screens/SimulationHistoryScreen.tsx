@@ -5,7 +5,6 @@ import {
   View,
   StyleSheet,
   Pressable,
-  Animated,
 } from 'react-native';
 import { Text, Checkbox } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
@@ -13,9 +12,9 @@ import { Feather } from '@expo/vector-icons';
 
 import { colors } from '../constants/colors';
 import { spacing, typography, borderRadius } from '../theme';
-import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
 import { Card } from '../components/common/Card';
+import { ListEntityCard } from '../components/common/ListEntityCard';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ErrorMessage } from '../components/common/ErrorMessage';
 import { useDeleteSimulation, useSimulations } from '../hooks/useSimulations';
@@ -23,8 +22,8 @@ import { fmtNum } from '../utils/formatters';
 
 export function SimulationHistoryScreen() {
   const nav = useNavigation<any>();
-  const [tractorId, setTractorId] = useState('');
-  const [implementId, setImplementId] = useState('');
+  const [tractorId] = useState('');
+  const [implementId] = useState('');
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
   const params = useMemo(
@@ -36,12 +35,13 @@ export function SimulationHistoryScreen() {
     }),
     [tractorId, implementId]
   );
+
   const simsQ = useSimulations(params);
   const del = useDeleteSimulation();
 
   const selectedIds = Object.entries(selected)
-    .filter(([, v]) => v)
-    .map(([k]) => k);
+    .filter(([, value]) => value)
+    .map(([id]) => id);
 
   const canCompare = selectedIds.length >= 2 && selectedIds.length <= 3;
 
@@ -54,7 +54,6 @@ export function SimulationHistoryScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
         <View style={styles.headerSection}>
           <Text style={styles.headerTitle}>Simulation History</Text>
           <Text style={styles.headerSubtitle}>
@@ -62,13 +61,12 @@ export function SimulationHistoryScreen() {
           </Text>
         </View>
 
-        {/* Action Buttons */}
         <View style={styles.actionsRow}>
           <Button
             variant="primary"
             size="md"
             onPress={() => nav.navigate('SimulationSetup')}
-            style={{ flex: 1 }}
+            style={styles.actionButton}
           >
             New Simulation
           </Button>
@@ -77,123 +75,85 @@ export function SimulationHistoryScreen() {
             size="md"
             disabled={!canCompare}
             onPress={() => nav.navigate('SimulationCompare', { ids: selectedIds.slice(0, 3) })}
-            style={{ flex: 1, marginLeft: spacing.md }}
+            style={styles.actionButton}
           >
             {`Compare (${selectedIds.length})`}
           </Button>
         </View>
 
-        {/* Loading State */}
-        {simsQ.isLoading && (
+        {simsQ.isLoading ? (
           <View style={styles.centerContainer}>
             <LoadingSpinner />
           </View>
-        )}
+        ) : null}
 
-        {/* Error State */}
-        {simsQ.error && (
+        {simsQ.error ? (
           <Card variant="outlined" style={styles.errorCard}>
             <ErrorMessage message={(simsQ.error as Error).message} />
           </Card>
-        )}
+        ) : null}
 
-        {/* List of Simulations */}
         {!simsQ.isLoading && !simsQ.error && simsQ.data?.items?.length ? (
           <View style={styles.listContainer}>
             {simsQ.data.items.map((simulation, index) => (
-              <Card
+              <ListEntityCard
                 key={simulation.id}
-                variant="elevated"
-                spacing="default"
+                title={simulation.name || 'Simulation'}
+                subtitle={new Date(simulation.created_at).toLocaleString()}
+                badge={{
+                  icon: <Feather name="activity" size={14} color={colors.primary} />,
+                  label: 'History',
+                  textColor: colors.primary,
+                  backgroundColor: `${colors.primary}15`,
+                }}
+                specs={[
+                  {
+                    icon: <Feather name="trending-down" size={16} color={colors.primary} />,
+                    text: `Slip ${fmtNum(simulation.slip, 1)}%`,
+                  },
+                  {
+                    icon: <Feather name="award" size={16} color={colors.primary} />,
+                    text: `Efficiency ${fmtNum(simulation.overall_efficiency, 1)}%`,
+                  },
+                ]}
+                actions={[
+                  {
+                    label: 'View Result',
+                    icon: <Feather name="eye" size={16} color="#FFFFFF" />,
+                    variant: 'solid',
+                    onPress: () => nav.navigate('SimulationResult', { id: simulation.id }),
+                  },
+                  {
+                    label: 'Delete',
+                    icon: <Feather name="trash-2" size={16} color="#FF4D4F" />,
+                    variant: 'danger',
+                    onPress: async () => {
+                      await del.mutateAsync(simulation.id);
+                    },
+                  },
+                ]}
+                headerAccessory={
+                  <Checkbox
+                    status={selected[simulation.id] ? 'checked' : 'unchecked'}
+                    onPress={() =>
+                      setSelected((prev) => ({
+                        ...prev,
+                        [simulation.id]: !prev[simulation.id],
+                      }))
+                    }
+                    color={colors.primary}
+                  />
+                }
                 style={[
                   styles.simulationCard,
                   index === simsQ.data.items.length - 1 && styles.lastCard,
                 ]}
-              >
-                <View style={styles.simulationCardContent}>
-                  {/* Header with checkbox */}
-                  <View style={styles.simulationHeader}>
-                    <View style={styles.simulationInfo}>
-                      <Text style={styles.simulationName}>
-                        {simulation.name || 'Simulation'}
-                      </Text>
-                      <Text style={styles.simulationDate}>
-                        {new Date(simulation.created_at).toLocaleString()}
-                      </Text>
-                    </View>
-                    <Checkbox
-                      status={selected[simulation.id] ? 'checked' : 'unchecked'}
-                      onPress={() =>
-                        setSelected((prev) => ({
-                          ...prev,
-                          [simulation.id]: !prev[simulation.id],
-                        }))
-                      }
-                    />
-                  </View>
-
-                  {/* Metrics */}
-                  <View style={styles.metricsRow}>
-                    <View style={styles.metric}>
-                      <Feather
-                        name="trending-up"
-                        size={16}
-                        color={colors.primary}
-                        style={styles.metricIcon}
-                      />
-                      <View>
-                        <Text style={styles.metricLabel}>Slip</Text>
-                        <Text style={styles.metricValue}>
-                          {fmtNum(simulation.slip, 1)}%
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.metric}>
-                      <Feather
-                        name="zap"
-                        size={16}
-                        color={colors.secondary}
-                        style={styles.metricIcon}
-                      />
-                      <View>
-                        <Text style={styles.metricLabel}>Efficiency</Text>
-                        <Text style={styles.metricValue}>
-                          {fmtNum(simulation.overall_efficiency, 1)}%
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Actions */}
-                  <View style={styles.actionsButtonsRow}>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onPress={() =>
-                        nav.navigate('SimulationResult', { id: simulation.id })
-                      }
-                      style={{ flex: 1 }}
-                    >
-                      View
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      disabled={del.isPending}
-                      onPress={async () => {
-                        await del.mutateAsync(simulation.id);
-                      }}
-                      style={{ flex: 1, marginLeft: spacing.md }}
-                    >
-                      Delete
-                    </Button>
-                  </View>
-                </View>
-              </Card>
+              />
             ))}
           </View>
-        ) : !simsQ.isLoading && !simsQ.error ? (
+        ) : null}
+
+        {!simsQ.isLoading && !simsQ.error && !simsQ.data?.items?.length ? (
           <View style={styles.emptyStateContainer}>
             <View style={styles.emptyIconWrapper}>
               <Feather name="activity" size={48} color={colors.muted} />
@@ -214,7 +174,6 @@ export function SimulationHistoryScreen() {
         ) : null}
       </ScrollView>
 
-      {/* Floating Action Button */}
       <Pressable
         onPress={() => nav.navigate('SimulationSetup')}
         style={styles.fab}
@@ -250,17 +209,13 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.muted,
   },
-  filtersSection: {
-    marginBottom: spacing.lg,
-    gap: spacing.md,
-  },
-  filterInput: {
-    marginVertical: 0,
-  },
   actionsRow: {
     flexDirection: 'row',
     gap: spacing.md,
     marginBottom: spacing.lg,
+  },
+  actionButton: {
+    flex: 1,
   },
   centerContainer: {
     paddingVertical: spacing.xxxl,
@@ -275,59 +230,10 @@ const styles = StyleSheet.create({
   },
   simulationCard: {
     marginBottom: 0,
+    marginHorizontal: 0,
   },
   lastCard: {
     marginBottom: spacing.lg,
-  },
-  simulationCardContent: {
-    gap: spacing.md,
-  },
-  simulationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  simulationInfo: {
-    flex: 1,
-    marginRight: spacing.md,
-  },
-  simulationName: {
-    ...typography.h5,
-    color: colors.text,
-  },
-  simulationDate: {
-    ...typography.bodySmall,
-    color: colors.muted,
-    marginTop: spacing.xs,
-  },
-  metricsRow: {
-    flexDirection: 'row',
-    gap: spacing.lg,
-  },
-  metric: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: '#F9FAFB',
-    borderRadius: borderRadius.md,
-  },
-  metricIcon: {
-    marginRight: spacing.xs,
-  },
-  metricLabel: {
-    ...typography.labelSmall,
-    color: colors.muted,
-  },
-  metricValue: {
-    ...typography.label,
-    color: colors.text,
-  },
-  actionsButtonsRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
   },
   emptyStateContainer: {
     paddingVertical: spacing.xxxl,
@@ -375,4 +281,3 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
 });
-

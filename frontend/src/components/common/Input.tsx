@@ -17,6 +17,8 @@ interface InputProps extends RNTextInputProps {
   helperText?: string;
   icon?: React.ReactNode;
   rightIcon?: React.ReactNode;
+  /** react-native-paper ``TextInput`` adornment (e.g. ``TextInput.Icon``). */
+  right?: React.ReactNode;
   containerStyle?: StyleProp<ViewStyle>;
 }
 
@@ -26,6 +28,7 @@ export function Input({
   helperText,
   icon,
   rightIcon,
+  right,
   containerStyle,
   onFocus: onFocusProp,
   onBlur: onBlurProp,
@@ -72,6 +75,7 @@ export function Input({
           {...props}
           onFocus={handleFocus}
           onBlur={handleBlur}
+          right={right}
           style={[
             styles.input,
             { opacity: editable ? 1 : 0.5 },
@@ -80,7 +84,7 @@ export function Input({
           activeOutlineColor={colors.primary}
           outlineColor={error ? colors.danger : '#E5E7EB'}
         />
-        {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
+        {rightIcon && !right ? <View style={styles.rightIcon}>{rightIcon}</View> : null}
       </View>
       {helperText && (
         <Text style={[styles.helperText, error && styles.helperTextError]}>

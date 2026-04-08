@@ -6,17 +6,48 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_db
 from app.middleware.auth import get_current_user
+from app.models.iot_reading import IoTReading
 from app.models.session import IoTAlert, OperationSession
 from app.models.user import User
 from app.routes.sessions import _assert_session_access, _to_utc
-from app.schemas.session import AlertSummaryItem, SessionSummaryReport
+from app.schemas.session import (
+    AlertSummaryItem,
+    FieldObservationResponse,
+    PresetSummaryItem,
+    SessionMetricSummary,
+    SessionSummaryReport,
+)
 from app.services.report_service import ReportFilters, generate_report
+from app.services.field_area_service import finalize_session_area
+from app.services.operation_cost_service import compute_session_cost
 
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports"])
+
+SESSION_METRIC_LABELS = {
+    "forward_speed": ("Speed", "km/h"),
+    "pto_shaft_speed": ("PTO Speed", "rpm"),
+    "depth_of_operation": ("Depth", "cm"),
+    "soil_moisture": ("Soil Moisture", "%"),
+    "field_capacity": ("Field Capacity", "ha/h"),
+    "wheel_slip": ("Wheel Slip", "%"),
+    "gearbox_temperature": ("Gearbox Temperature", "\u00B0C"),
+    "vibration": ("Vibration", ""),
+}
+
+PRESET_TO_FEED = {
+    "forward_speed": "forward_speed",
+    "operation_depth": "depth_of_operation",
+    "pto_shaft_speed": "pto_shaft_speed",
+    "gearbox_temperature": "gearbox_temperature",
+    "wheel_slip": "wheel_slip",
+    "soil_moisture": "soil_moisture",
+    "field_capacity": "field_capacity",
+    "vibration_level": "vibration",
+}
 
 
 @router.get("/summary")
@@ -89,11 +120,30 @@ def get_session_summary_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = db.get(OperationSession, session_id)
+    session = db.scalars(
+        select(OperationSession)
+        .where(OperationSession.id == session_id)
+        .options(
+            selectinload(OperationSession.operator),
+            selectinload(OperationSession.preset_values),
+            selectinload(OperationSession.field_observations),
+        )
+    ).first()
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     _assert_session_access(session, current_user, db)
+
+    if session.status == "completed" and session.area_ha is None:
+        finalize_session_area(session_id, db)
+        db.commit()
+        db.refresh(session)
+    if session.status == "completed" and (
+        session.charge_per_ha_applied is None or (session.total_cost_inr is None and session.area_ha is not None)
+    ):
+        compute_session_cost(session, db)
+        db.commit()
+        db.refresh(session)
 
     alerts = list(
         db.scalars(
@@ -108,11 +158,92 @@ def get_session_summary_report(
         end_dt = _to_utc(session.ended_at) if session.ended_at is not None else datetime.now(timezone.utc)
         duration_minutes = max(0.0, (end_dt - _to_utc(session.started_at)).total_seconds() / 60.0)
 
+    session_end = session.ended_at or datetime.now(timezone.utc)
+    readings = list(
+        db.scalars(
+            select(IoTReading)
+            .where(
+                IoTReading.session_id == session_id,
+                IoTReading.device_timestamp >= session.started_at,
+                IoTReading.device_timestamp <= session_end,
+            )
+            .order_by(IoTReading.device_timestamp.asc())
+        ).all()
+    )
+
+    if not readings:
+        readings = list(
+            db.scalars(
+                select(IoTReading)
+                .where(
+                    IoTReading.device_timestamp >= session.started_at,
+                    IoTReading.device_timestamp <= session_end,
+                )
+                .order_by(IoTReading.device_timestamp.asc())
+            ).all()
+        )
+
+    metric_groups: dict[str, list[IoTReading]] = {}
+    for reading in readings:
+        metric_groups.setdefault(reading.feed_key, []).append(reading)
+
+    metric_items: list[SessionMetricSummary] = []
+    for feed_key, rows in metric_groups.items():
+        numeric_values = [float(row.numeric_value) for row in rows if row.numeric_value is not None]
+        label, fallback_unit = SESSION_METRIC_LABELS.get(
+            feed_key,
+            (feed_key.replace("_", " ").title(), rows[-1].unit if rows else ""),
+        )
+        unit = rows[-1].unit if rows and rows[-1].unit else fallback_unit
+        metric_items.append(
+            SessionMetricSummary(
+                feed_key=feed_key,
+                label=label,
+                unit=unit,
+                samples=len(rows),
+                last_value=numeric_values[-1] if numeric_values else None,
+                avg_value=(sum(numeric_values) / len(numeric_values)) if numeric_values else None,
+                min_value=min(numeric_values) if numeric_values else None,
+                max_value=max(numeric_values) if numeric_values else None,
+            )
+        )
+
+    metrics_by_feed = {metric.feed_key: metric for metric in metric_items}
+    preset_summaries: list[PresetSummaryItem] = []
+    for preset in session.preset_values:
+        mapped_feed = PRESET_TO_FEED.get(preset.parameter_name)
+        metric = metrics_by_feed.get(mapped_feed) if mapped_feed else None
+        actual_value = metric.avg_value if metric and metric.avg_value is not None else metric.last_value if metric else None
+        deviation_pct: Optional[float] = None
+        status_label = "unknown"
+        if (
+            actual_value is not None
+            and preset.required_value is not None
+            and preset.required_value != 0
+        ):
+            deviation_pct = abs(actual_value - preset.required_value) / abs(preset.required_value) * 100.0
+            if deviation_pct >= float(preset.deviation_pct_crit or 25.0):
+                status_label = "critical"
+            elif deviation_pct >= float(preset.deviation_pct_warn or 10.0):
+                status_label = "warning"
+            else:
+                status_label = "ok"
+        preset_summaries.append(
+            PresetSummaryItem(
+                parameter_name=preset.parameter_name,
+                target_value=preset.required_value,
+                actual_value=actual_value,
+                unit=preset.unit,
+                deviation_pct=round(deviation_pct, 2) if deviation_pct is not None else None,
+                status=status_label,
+            )
+        )
+
     def severity_color_for(alert: IoTAlert) -> Optional[str]:
         if alert.alert_status == "critical":
-            return "#C00000"
+            return "red"
         if alert.alert_status == "warning":
-            return "#C55A11"
+            return "orange"
         return None
 
     alert_items = [
@@ -136,6 +267,7 @@ def get_session_summary_report(
         tractor_id=str(session.tractor_id),
         implement_id=str(session.implement_id) if session.implement_id else None,
         operator_id=str(session.operator_id),
+        operator_name=session.operator.name if session.operator is not None else None,
         started_at=session.started_at,
         ended_at=session.ended_at,
         duration_minutes=duration_minutes,
@@ -144,6 +276,13 @@ def get_session_summary_report(
         charge_per_ha_applied=session.charge_per_ha_applied,
         cost_note=session.cost_note,
         alerts=alert_items,
+        field_observations=[
+            FieldObservationResponse.model_validate(observation)
+            for observation in session.field_observations
+        ],
+        observations_count=len(session.field_observations),
+        metrics=metric_items,
+        preset_summaries=preset_summaries,
         total_alerts=len(alert_items),
         unacknowledged_alerts=sum(1 for alert in alerts if not alert.acknowledged),
     )

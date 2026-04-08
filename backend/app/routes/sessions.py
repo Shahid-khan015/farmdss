@@ -18,6 +18,7 @@ from app.models.session import FieldObservation, IoTAlert, OperationSession, Ses
 from app.models.tractor import Tractor
 from app.models.user import User
 from app.schemas.session import (
+    AlertListResponse,
     AlertResponse,
     FieldObservationCreate,
     FieldObservationResponse,
@@ -33,16 +34,14 @@ alerts_router = APIRouter(prefix="/api/v1/alerts", tags=["Sessions"])
 
 
 def _assert_session_access(session: OperationSession, user: User, db: Session) -> None:
+    if user.role == "owner":
+        return
     if user.role == "researcher":
         return
     if session.operator_id == user.id or session.client_farmer_id == user.id:
         return
     if session.tractor_owner_id == user.id:
         return
-    if user.role == "owner":
-        tractor = db.get(Tractor, session.tractor_id)
-        if tractor is not None and tractor.owner_id == user.id:
-            return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="You do not have access to this session",
@@ -50,7 +49,21 @@ def _assert_session_access(session: OperationSession, user: User, db: Session) -
 
 
 def _to_session_response(obj: OperationSession) -> SessionResponse:
-    return SessionResponse.model_validate(obj)
+    payload = SessionResponse.model_validate(obj).model_dump()
+    payload["operator_name"] = obj.operator.name if getattr(obj, "operator", None) is not None else None
+    alerts = getattr(obj, "alerts", None)
+    if alerts is not None:
+        payload["alerts_count"] = len(alerts)
+        payload["unacknowledged_alerts"] = sum(1 for alert in alerts if not alert.acknowledged)
+    return SessionResponse(**payload)
+
+
+def _severity_to_status(severity_color: Optional[str]) -> Optional[str]:
+    if severity_color == "red":
+        return "critical"
+    if severity_color in ("orange", "yellow"):
+        return "warning"
+    return None
 
 
 def _to_utc(dt: datetime) -> datetime:
@@ -118,6 +131,27 @@ def start_session(
             detail="Operator already has an active session",
         )
 
+    if not body.client_farmer_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Farmer selection is required to start a session",
+        )
+
+    try:
+        farmer_uuid = uuid.UUID(body.client_farmer_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid farmer id",
+        ) from exc
+
+    farmer = db.get(User, farmer_uuid)
+    if farmer is None or farmer.role != "farmer" or not farmer.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Selected farmer not found",
+        )
+
     implement_width_m: Optional[float] = None
     implement_uuid: Optional[uuid.UUID] = None
     implement: Optional[Implement] = None
@@ -137,7 +171,7 @@ def start_session(
         implement_id=implement_uuid,
         operator_id=current_user.id,
         tractor_owner_id=getattr(tractor, "owner_id", None),
-        client_farmer_id=uuid.UUID(body.client_farmer_id) if body.client_farmer_id else None,
+        client_farmer_id=farmer_uuid,
         operation_type=body.operation_type,
         gps_tracking_enabled=body.gps_tracking_enabled,
         implement_width_m=implement_width_m,
@@ -265,22 +299,18 @@ def list_active_sessions(
     if current_user.role == "operator":
         stmt = stmt.where(OperationSession.operator_id == current_user.id)
     elif current_user.role == "owner":
-        stmt = (
-            stmt.join(Tractor, OperationSession.tractor_id == Tractor.id)
-            .where(
-                or_(
-                    OperationSession.tractor_owner_id == current_user.id,
-                    Tractor.owner_id == current_user.id,
-                )
-            )
-        )
+        pass
     elif current_user.role == "farmer":
         stmt = stmt.where(OperationSession.client_farmer_id == current_user.id)
     elif current_user.role == "researcher":
         pass
     else:
         return []
-    rows = db.scalars(stmt.order_by(OperationSession.started_at.desc())).all()
+    rows = db.scalars(
+        stmt.options(selectinload(OperationSession.operator), selectinload(OperationSession.alerts)).order_by(
+            OperationSession.started_at.desc()
+        )
+    ).all()
     return [_to_session_response(r) for r in rows]
 
 
@@ -294,8 +324,10 @@ def get_session_detail(
         select(OperationSession)
         .where(OperationSession.id == session_id)
         .options(
+            selectinload(OperationSession.operator),
             selectinload(OperationSession.preset_values),
             selectinload(OperationSession.alerts),
+            selectinload(OperationSession.field_observations),
         )
     ).first()
     if session is None:
@@ -303,9 +335,10 @@ def get_session_detail(
     _assert_session_access(session, current_user, db)
 
     return SessionDetailResponse(
-        **SessionResponse.model_validate(session).model_dump(),
+        **_to_session_response(session).model_dump(),
         preset_values=[PresetValueResponse.model_validate(p) for p in session.preset_values],
         alerts=[AlertResponse.model_validate(a) for a in session.alerts],
+        field_observations=[FieldObservationResponse.model_validate(o) for o in session.field_observations],
         total_duration_minutes=_duration_minutes(session.started_at, session.ended_at),
     )
 
@@ -320,21 +353,18 @@ def list_sessions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    stmt = select(OperationSession)
+    stmt = select(OperationSession).options(
+        selectinload(OperationSession.operator),
+        selectinload(OperationSession.alerts),
+    )
     if current_user.role == "operator":
         stmt = stmt.where(OperationSession.operator_id == current_user.id)
     elif current_user.role == "owner":
-        stmt = (
-            stmt.join(Tractor, OperationSession.tractor_id == Tractor.id)
-            .where(
-                or_(
-                    OperationSession.tractor_owner_id == current_user.id,
-                    Tractor.owner_id == current_user.id,
-                )
-            )
-        )
+        pass
     elif current_user.role == "farmer":
         stmt = stmt.where(OperationSession.client_farmer_id == current_user.id)
+    elif current_user.role == "researcher":
+        pass
     else:
         return []
 
@@ -533,6 +563,50 @@ def get_session_area_summary(
         "operation_type": session.operation_type,
         "status": session.status,
     }
+
+
+@alerts_router.get("", response_model=AlertListResponse)
+def list_alerts(
+    session_id: Optional[uuid.UUID] = Query(default=None),
+    acknowledged: Optional[bool] = Query(default=None),
+    severity_color: Optional[str] = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    stmt = (
+        select(IoTAlert)
+        .outerjoin(OperationSession, IoTAlert.session_id == OperationSession.id)
+        .order_by(IoTAlert.created_at.desc())
+    )
+
+    if current_user.role == "operator":
+        stmt = stmt.where(OperationSession.operator_id == current_user.id)
+    elif current_user.role == "farmer":
+        stmt = stmt.where(OperationSession.client_farmer_id == current_user.id)
+    elif current_user.role == "owner":
+        pass
+    elif current_user.role == "researcher":
+        pass
+    else:
+        return AlertListResponse(total=0, items=[])
+
+    if session_id is not None:
+        stmt = stmt.where(IoTAlert.session_id == session_id)
+    if acknowledged is not None:
+        stmt = stmt.where(IoTAlert.acknowledged == acknowledged)
+
+    mapped_status = _severity_to_status(severity_color)
+    if mapped_status is not None:
+        stmt = stmt.where(IoTAlert.alert_status == mapped_status)
+
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = db.scalars(stmt.limit(limit).offset(offset)).all()
+    return AlertListResponse(
+        total=int(total),
+        items=[AlertResponse.model_validate(row) for row in rows],
+    )
 
 
 @alerts_router.patch("/{alert_id}/acknowledge", response_model=AlertResponse)

@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_db
-from app.middleware.auth import get_current_user
+from app.middleware.auth import get_current_user, require_role
 from app.models.user import User, UserProfile, UserSession
 from app.schemas.auth import (
     LoginRequest,
@@ -21,6 +21,7 @@ from app.schemas.auth import (
     ProfileUpdateRequest,
     RegisterRequest,
     RefreshTokenRequest,
+    FarmerOptionResponse,
     UserResponse,
 )
 from app.utils.security import (
@@ -110,6 +111,17 @@ def _user_response_without_profile(user: User) -> UserResponse:
         role=user.role,
         is_active=user.is_active,
         profile=None,
+    )
+
+
+def _farmer_option_response(user: User, profile: UserProfile | None) -> FarmerOptionResponse:
+    return FarmerOptionResponse(
+        id=str(user.id),
+        name=user.name,
+        phone_number=user.phone_number,
+        farm_name=profile.farm_name if profile is not None else None,
+        farm_location=profile.farm_location if profile is not None else None,
+        total_land_hectares=profile.total_land_hectares if profile is not None else None,
     )
 
 
@@ -382,3 +394,17 @@ def update_profile(
     db.commit()
 
     return MessageResponse(message="Profile updated successfully")
+
+
+@router.get("/farmers", response_model=list[FarmerOptionResponse], summary="List farmers for session assignment")
+def list_farmers(
+    _: User = Depends(require_role(["operator", "owner", "researcher"])),
+    db: Session = Depends(get_db),
+) -> list[FarmerOptionResponse]:
+    farmers = db.scalars(
+        select(User)
+        .where(User.role == "farmer", User.is_active.is_(True))
+        .options(selectinload(User.profile))
+        .order_by(User.name.asc())
+    ).all()
+    return [_farmer_option_response(farmer, farmer.profile) for farmer in farmers]

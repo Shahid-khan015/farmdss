@@ -7,19 +7,50 @@ import { Feather } from '@expo/vector-icons';
 import { colors } from '../../constants/colors';
 import { spacing, typography, borderRadius } from '../../theme';
 
-function getStatusConfig(slip?: number | null) {
-  if (slip == null || slip < 8 || slip > 15) {
+function getStatusConfig(loadStatus?: string | null, slip?: number | null) {
+  const normalized = (loadStatus ?? '').trim().toLowerCase();
+
+  if (normalized.includes('over')) {
     return {
       gradientStart: colors.danger,
-      gradientEnd: '#F77B68',
-      icon: 'alert-circle',
+      gradientEnd: '#EF6C63',
+      icon: 'alert-triangle' as const,
+      badgeLabel: 'Over Loaded',
+    };
+  }
+
+  if (normalized.includes('under')) {
+    return {
+      gradientStart: colors.success,
+      gradientEnd: '#66BB6A',
+      icon: 'check-circle' as const,
+      badgeLabel: 'Under Loaded',
+    };
+  }
+
+  if (normalized.includes('proper')) {
+    return {
+      gradientStart: colors.warning,
+      gradientEnd: '#D9A406',
+      icon: 'info' as const,
+      badgeLabel: 'Properly Loaded',
+    };
+  }
+
+  if (slip == null || slip < 8 || slip > 15) {
+    return {
+      gradientStart: colors.warning,
+      gradientEnd: '#D9A406',
+      icon: 'info' as const,
+      badgeLabel: loadStatus ?? 'Review Needed',
     };
   }
 
   return {
-    gradientStart: colors.success,
-    gradientEnd: '#66BB6A',
-    icon: 'check-circle',
+    gradientStart: colors.warning,
+    gradientEnd: '#D9A406',
+    icon: 'info' as const,
+    badgeLabel: loadStatus ?? 'Properly Loaded',
   };
 }
 
@@ -47,14 +78,14 @@ export function RecommendationCard({
 
   if (isDismissed) return null;
 
-  const statusConfig = getStatusConfig(slip);
+  const statusConfig = getStatusConfig(loadStatus, slip);
   const opacity = dismissAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [1, 0],
   });
   const scale = dismissAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 0.9],
+    outputRange: [1, 0.94],
   });
 
   return (
@@ -75,15 +106,21 @@ export function RecommendationCard({
       >
         <View style={styles.cardContent}>
           <View style={styles.header}>
-            <View style={[styles.iconWrapper, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+            <View style={styles.iconWrapper}>
               <Feather name={statusConfig.icon} size={24} color="#FFFFFF" />
             </View>
+
             <View style={styles.headerText}>
-              <Text style={styles.statusTitle}>
-                Tractor is {loadStatus ?? 'Not Specified'}
-              </Text>
-              <Text style={styles.statusMessage}>{statusMessage ?? '—'}</Text>
+              <View style={styles.statusTitleRow}>
+                <Text style={styles.statusEyebrow}>Tractor Load Status</Text>
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusPillText}>{statusConfig.badgeLabel}</Text>
+                </View>
+              </View>
+              <Text style={styles.statusTitle}>{loadStatus ?? 'Status Not Specified'}</Text>
+              <Text style={styles.statusMessage}>{statusMessage ?? '-'}</Text>
             </View>
+
             <Pressable
               onPress={handleDismiss}
               style={({ pressed }) => [
@@ -95,7 +132,7 @@ export function RecommendationCard({
             </Pressable>
           </View>
 
-          {recommendations && (
+          {recommendations ? (
             <View style={styles.recommendationsSection}>
               <View style={styles.recommendationsHeader}>
                 <Feather name="lightbulb" size={16} color="#FFFFFF" />
@@ -103,7 +140,7 @@ export function RecommendationCard({
               </View>
               <Text style={styles.recommendationsText}>{recommendations}</Text>
             </View>
-          )}
+          ) : null}
         </View>
       </LinearGradient>
     </Animated.View>
@@ -127,15 +164,42 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   iconWrapper: {
-    width: 44,
-    height: 44,
+    width: 46,
+    height: 46,
     borderRadius: borderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.18)',
   },
   headerText: {
     flex: 1,
+  },
+  statusTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  statusEyebrow: {
+    ...typography.labelSmall,
+    color: 'rgba(255,255,255,0.82)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  statusPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  statusPillText: {
+    ...typography.labelSmall,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   statusTitle: {
     ...typography.h5,
@@ -145,7 +209,7 @@ const styles = StyleSheet.create({
   },
   statusMessage: {
     ...typography.body,
-    color: 'rgba(255,255,255,0.9)',
+    color: 'rgba(255,255,255,0.92)',
     lineHeight: 20,
   },
   dismissButton: {
@@ -178,7 +242,7 @@ const styles = StyleSheet.create({
   },
   recommendationsText: {
     ...typography.body,
-    color: 'rgba(255,255,255,0.9)',
+    color: 'rgba(255,255,255,0.92)',
     lineHeight: 20,
   },
 });

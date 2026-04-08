@@ -264,6 +264,7 @@ const [touched, setTouched] = useState({
           variant="outline"
           size="lg"
           fullWidth
+          style={styles.matchingOutlineButton}
           disabled={saving}
           onPress={() => nav.goBack()}
         >
@@ -364,6 +365,12 @@ const styles = StyleSheet.create({
   footer: {
     gap: spacing.md,
     marginTop: spacing.xl,
+  },
+  matchingOutlineButton: {
+    minHeight: 48,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
   },
 });
 

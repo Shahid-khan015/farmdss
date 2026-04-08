@@ -21,8 +21,6 @@ interface PickerProps {
   error?: boolean;
   disabled?: boolean;
   containerStyle?: StyleProp<ViewStyle>;
-  style?: StyleProp<ViewStyle>;
-  rightIcon?: React.ReactNode;
 }
 
 export function Picker({
@@ -34,8 +32,6 @@ export function Picker({
   error = false,
   disabled = false,
   containerStyle,
-  style,
-  rightIcon,
 }: PickerProps) {
   const [showModal, setShowModal] = useState(false);
 
@@ -59,7 +55,6 @@ export function Picker({
             styles.pickerWrapper,
             error && styles.pickerWrapperError,
             disabled && styles.pickerWrapperDisabled,
-            style,
           ]}
         >
           <Text
@@ -70,11 +65,10 @@ export function Picker({
           >
             {displayText}
           </Text>
-          {rightIcon && <View style={styles.rightIconContainer}>{rightIcon}</View>}
           <Feather
             name="chevron-down"
-            size={18}
-            color={error ? colors.danger : selectedItem ? colors.text : colors.muted}
+            size={20}
+            color={error ? colors.danger : colors.text}
             style={styles.chevron}
           />
         </View>
@@ -86,17 +80,19 @@ export function Picker({
         animationType="slide"
         onRequestClose={() => setShowModal(false)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setShowModal(false)}>
+        <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Pressable onPress={() => setShowModal(false)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalActionText}>Cancel</Text>
               </Pressable>
               <Text style={styles.modalTitle}>{label || 'Select'}</Text>
-              <View style={{ width: 60 }} />
+              <Pressable>
+                <Text style={{ opacity: 0 }}>Done</Text>
+              </Pressable>
             </View>
 
-            <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
+            <ScrollView style={styles.modalList}>
               {items.map(item => (
                 <Pressable
                   key={item.value}
@@ -115,13 +111,13 @@ export function Picker({
                     {item.label}
                   </Text>
                   {value === item.value && (
-                    <Feather name="check" size={18} color={colors.primary} />
+                    <Feather name="check" size={20} color={colors.primary} />
                   )}
                 </Pressable>
               ))}
             </ScrollView>
           </View>
-        </Pressable>
+        </View>
       </Modal>
     </View>
   );
@@ -145,7 +141,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    minHeight: 48,
+    minHeight: 44,
   },
   pickerWrapperError: {
     borderColor: colors.danger,
@@ -163,23 +159,19 @@ const styles = StyleSheet.create({
   pickerPlaceholder: {
     color: colors.muted,
   },
-  rightIconContainer: {
-    marginRight: spacing.sm,
-  },
   chevron: {
-    marginLeft: spacing.xs,
+    marginLeft: spacing.sm,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.lg,
     borderTopRightRadius: borderRadius.lg,
-    maxHeight: '70%',
-    paddingBottom: spacing.xl,
+    maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -188,20 +180,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F1F3',
+    borderBottomColor: '#E5E7EB',
   },
   modalTitle: {
-    ...typography.label,
+    ...typography.h5,
     color: colors.text,
-    fontWeight: '600',
   },
-  modalCancelText: {
+  modalActionText: {
     ...typography.label,
     color: colors.primary,
-    width: 60,
   },
   modalList: {
-    padding: spacing.md,
+    padding: spacing.lg,
   },
   modalItem: {
     flexDirection: 'row',
@@ -209,11 +199,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   modalItemSelected: {
-    backgroundColor: `${colors.primary}10`,
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    borderRadius: borderRadius.md,
   },
   modalItemText: {
     ...typography.body,

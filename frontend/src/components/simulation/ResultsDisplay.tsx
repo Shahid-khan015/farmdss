@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 
-import { MetricCard } from './MetricCard';
+import { SimulationMetricCard as MetricCard } from './MetricCard';
 import { colors } from '../../constants/colors';
 import { spacing, typography } from '../../theme';
 

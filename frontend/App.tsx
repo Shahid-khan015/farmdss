@@ -8,6 +8,7 @@ import { PaperProvider, MD3LightTheme } from 'react-native-paper';
 import { QueryClientProvider } from '@tanstack/react-query';
 
 import { AppNavigator } from './src/navigation/AppNavigator';
+import { AuthProvider } from './src/contexts/AuthContext';
 import { colors } from './src/constants/colors';
 import { queryClient } from './src/hooks/queryClient';
 
@@ -26,8 +27,10 @@ export default function App() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <PaperProvider theme={theme}>
-          <StatusBar style="auto" />
-          <AppNavigator />
+          <AuthProvider>
+            <StatusBar style="auto" />
+            <AppNavigator />
+          </AuthProvider>
         </PaperProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

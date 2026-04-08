@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, Dimensions } from 'react-native';
 import { Text } from 'react-native-paper';
 import { colors } from '../../constants/colors';
-import { spacing, borderRadius } from '../../theme';
+import { spacing, borderRadius, typography } from '../../theme';
 
 interface LoadStatusGaugeProps {
   loadPercentage: number;
@@ -23,9 +23,33 @@ function getLoadStatusLabel(percentage: number): string {
 export function LoadStatusGauge({ loadPercentage }: LoadStatusGaugeProps) {
   const { width } = Dimensions.get('window');
   const gaugeWidth = Math.min(width - spacing.lg * 2, 400);
-  const fillWidth = Math.min(loadPercentage, 100);
+  const boundedValue = Math.max(0, Math.min(loadPercentage, 100));
   const statusColor = getLoadStatusColor(loadPercentage);
   const statusLabel = getLoadStatusLabel(loadPercentage);
+  const segmentCount = 30;
+  const activeSegments = Math.round((boundedValue / 100) * segmentCount);
+  const gaugeSize = Math.min(gaugeWidth - spacing.xl, 220);
+  const segmentLength = Math.max(12, gaugeSize * 0.1);
+  const segmentThickness = Math.max(8, gaugeSize * 0.055);
+  const radius = gaugeSize * 0.38;
+  const centerX = gaugeSize / 2;
+  const centerY = gaugeSize * 0.48;
+  const gaugeHeight = gaugeSize * 0.82;
+  const startAngle = 150;
+  const sweepAngle = 240;
+  const endAngle = startAngle + sweepAngle;
+  const segments = Array.from({ length: segmentCount }, (_, index) => {
+    const t = segmentCount === 1 ? 0 : index / (segmentCount - 1);
+    const angle = startAngle + t * (endAngle - startAngle);
+    const rad = (angle * Math.PI) / 180;
+    return {
+      key: `${angle}-${index}`,
+      left: centerX + radius * Math.cos(rad) - segmentLength / 2,
+      top: centerY + radius * Math.sin(rad) - segmentThickness / 2,
+      angle,
+      active: index < activeSegments,
+    };
+  });
 
   return (
     <View style={styles.container}>
@@ -36,42 +60,30 @@ export function LoadStatusGauge({ loadPercentage }: LoadStatusGaugeProps) {
         </View>
       </View>
 
-      <View style={styles.meta}>
-        <Text style={styles.percentageValue}>{Math.round(fillWidth)}%</Text>
-        <Text style={styles.rangeText}>Load Capacity</Text>
-      </View>
-
-      <View style={[styles.track, { width: gaugeWidth }]}>
-        <View style={styles.zones}>
-          <View style={[styles.zone, styles.zoneRed]} />
-          <View style={[styles.zone, styles.zoneYellow]} />
-          <View style={[styles.zone, styles.zoneGreen]} />
+      <View style={[styles.gaugeFrame, { width: gaugeWidth }]}>
+        <View style={[styles.segmentGauge, { width: gaugeSize, height: gaugeHeight }]}>
+          {segments.map((segment) => (
+            <View
+              key={segment.key}
+              style={[
+                styles.segment,
+                {
+                  left: segment.left,
+                  top: segment.top,
+                  width: segmentLength,
+                  height: segmentThickness,
+                  backgroundColor: segment.active ? statusColor : '#F1F3F5',
+                  transform: [{ rotate: `${segment.angle + 90}deg` }],
+                },
+              ]}
+            />
+          ))}
+          <View style={styles.centerValueWrap}>
+            <Text style={styles.centerValue}>{Math.round(boundedValue)}</Text>
+            <Text style={styles.centerUnit}>%</Text>
+          </View>
+          <Text style={styles.rangeText}>Load Capacity</Text>
         </View>
-
-        <View
-          style={[
-            styles.fill,
-            {
-              width: `${fillWidth}%`,
-              backgroundColor: statusColor,
-            },
-          ]}
-        />
-      </View>
-
-      <View style={styles.labels}>
-        <Text style={styles.label}>
-          <Text style={styles.labelValue}>0</Text>
-          <Text style={styles.labelUnit}>%</Text>
-        </Text>
-        <Text style={styles.label}>
-          <Text style={styles.labelValue}>50</Text>
-          <Text style={styles.labelUnit}>%</Text>
-        </Text>
-        <Text style={styles.label}>
-          <Text style={styles.labelValue}>100</Text>
-          <Text style={styles.labelUnit}>%</Text>
-        </Text>
       </View>
 
       <View style={styles.legend}>
@@ -131,73 +143,48 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
 
-  percentageValue: {
-    fontSize: 32,
+  gaugeFrame: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  segmentGauge: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+
+  segment: {
+    position: 'absolute',
+    borderRadius: borderRadius.full,
+  },
+
+  centerValueWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '34%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  centerValue: {
+    ...typography.h1,
     fontWeight: '700',
     color: colors.text,
+    lineHeight: 44,
+  },
+
+  centerUnit: {
+    ...typography.bodySmall,
+    color: colors.muted,
+    marginTop: -4,
   },
 
   rangeText: {
-    fontSize: 12,
-    color: colors.muted,
-  },
-
-  track: {
-    height: 24,
-    backgroundColor: '#E5E7EB',
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-  },
-
-  zones: {
     position: 'absolute',
-    width: '100%',
-    height: '100%',
-    flexDirection: 'row',
-  },
-
-  zone: {
-    flex: 1,
-    opacity: 0.15,
-  },
-
-  zoneRed: {
-    backgroundColor: colors.danger,
-  },
-
-  zoneYellow: {
-    backgroundColor: colors.warning,
-  },
-
-  zoneGreen: {
-    backgroundColor: colors.success,
-  },
-
-  fill: {
-    height: '100%',
-    borderRadius: borderRadius.lg,
-  },
-
-  labels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.sm,
-    marginTop: spacing.xs,
-  },
-
-  label: {
-    fontSize: 10,
-    color: colors.muted,
-    alignItems: 'center',
-  },
-
-  labelValue: {
-    fontWeight: '700',
-    color: colors.text,
-  },
-
-  labelUnit: {
-    fontWeight: '400',
+    bottom: 0,
+    ...typography.bodySmall,
     color: colors.muted,
   },
 

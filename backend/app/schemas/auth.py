@@ -161,6 +161,17 @@ class UserResponse(BaseModel):
         return bool(data)
 
 
+class FarmerOptionResponse(BaseModel):
+    """Compact farmer payload for session assignment pickers."""
+
+    id: str
+    name: str
+    phone_number: str
+    farm_name: Optional[str] = None
+    farm_location: Optional[str] = None
+    total_land_hectares: Optional[Decimal] = None
+
+
 class LoginResponse(BaseModel):
     """Access and refresh tokens plus the authenticated user."""
 
