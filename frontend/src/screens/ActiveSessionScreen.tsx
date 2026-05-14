@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -13,10 +15,10 @@ import { Text } from 'react-native-paper';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 
+import { AlertNotificationPopup } from '../components/common/AlertNotificationPopup';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Input } from '../components/common/Input';
-import { Picker } from '../components/common/Picker';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ErrorMessage } from '../components/common/ErrorMessage';
 import { AlertsPanel } from '../components/iot/AlertsPanel';
@@ -54,6 +56,20 @@ function alertAccent(severityColor?: string | null): string {
   return '#888888';
 }
 
+function formatObservationGps(
+  lat: number | null | undefined,
+  lon: number | null | undefined,
+): string {
+  if (lat == null || lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return '--, --';
+  }
+  return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+}
+
+function observationUnitForType(t: 'soil_moisture' | 'cone_index'): string {
+  return t === 'soil_moisture' ? '%' : 'MPa';
+}
+
 export function ActiveSessionScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
@@ -72,7 +88,6 @@ export function ActiveSessionScreen() {
   const [obsValue, setObsValue] = useState('');
   const [obsNotes, setObsNotes] = useState('');
   const [obsSubmitting, setObsSubmitting] = useState(false);
-  const [obsError, setObsError] = useState<string | null>(null);
   const [ackLoadingId, setAckLoadingId] = useState<string | null>(null);
   const [sessionAlerts, setSessionAlerts] = useState<AlertResponse[]>([]);
   const [alertsError, setAlertsError] = useState<string | null>(null);
@@ -161,6 +176,16 @@ export function ActiveSessionScreen() {
       }),
     ) as typeof iot.feedsMap;
   }, [iot.feedsMap, sessionStartedMs]);
+
+  const observationGpsLine = useMemo(
+    () =>
+      formatObservationGps(
+        sessionFeedsMap.position_tracking?.lat,
+        sessionFeedsMap.position_tracking?.lon,
+      ),
+    [sessionFeedsMap.position_tracking?.lat, sessionFeedsMap.position_tracking?.lon],
+  );
+
   const machineStatusRaw = sessionFeedsMap.machine_status?.raw_value?.toUpperCase() ?? null;
   const machineStatus =
     machineStatusRaw === 'RUNNING' ? 'RUNNING' : machineStatusRaw === 'IDLE' ? 'IDLE' : 'No Signal';
@@ -169,17 +194,44 @@ export function ActiveSessionScreen() {
   const machineColor =
     machineStatus === 'RUNNING' ? colors.success : machineStatus === 'IDLE' ? colors.muted : colors.muted;
 
-  const renderDeviation = (feedKey: string, actual: number | null) => {
-    const preset = presetsMap[feedKey];
+  /** parameterKey matches session preset_values.parameter_name (e.g. operation_depth, gearbox_temperature). */
+  const renderDeviation = (parameterKey: string, actual: number | null) => {
+    const preset = presetsMap[parameterKey];
     if (!preset || actual == null || preset.required_value == null) return null;
     const target = Number(preset.required_value);
     if (!Number.isFinite(target) || target === 0) return null;
+
+    // Owner preset for gearbox is a MAX °C — only flag when actual exceeds it.
+    if (parameterKey === 'gearbox_temperature') {
+      if (actual <= target) {
+        return (
+          <Text style={styles.devNormal}>{`Below max: ${target}${preset.unit ? ` ${preset.unit}` : ''}`}</Text>
+        );
+      }
+      const diffPct = ((actual - target) / Math.abs(target)) * 100;
+      if (diffPct >= Number(preset.deviation_pct_crit ?? 25)) {
+        return (
+          <Text style={styles.devCritical}>
+            {`${diffPct.toFixed(0)}% over owner max (${actual.toFixed(1)} vs ${target})`}
+          </Text>
+        );
+      }
+      if (diffPct >= Number(preset.deviation_pct_warn ?? 10)) {
+        return (
+          <Text style={styles.devWarning}>
+            {`${diffPct.toFixed(0)}% over owner max (${actual.toFixed(1)} vs ${target})`}
+          </Text>
+        );
+      }
+      return <Text style={styles.devNormal}>{`Max: ${target}${preset.unit ? ` ${preset.unit}` : ''}`}</Text>;
+    }
+
     const diffPct = (Math.abs(actual - target) / Math.abs(target)) * 100;
     if (diffPct >= Number(preset.deviation_pct_crit ?? 25)) {
       const arrow = actual >= target ? '↑' : '↓';
       return (
         <Text style={styles.devCritical}>
-          {`${arrow} ${diffPct.toFixed(0)}% ${actual >= target ? 'above' : 'below'} target`}
+          {`${arrow} ${diffPct.toFixed(0)}% ${actual >= target ? 'above' : 'below'} owner preset`}
         </Text>
       );
     }
@@ -187,17 +239,60 @@ export function ActiveSessionScreen() {
       const arrow = actual >= target ? '↑' : '↓';
       return (
         <Text style={styles.devWarning}>
-          {`${arrow} ${diffPct.toFixed(0)}% ${actual >= target ? 'above' : 'below'} target`}
+          {`${arrow} ${diffPct.toFixed(0)}% ${actual >= target ? 'above' : 'below'} owner preset`}
         </Text>
       );
     }
-    return <Text style={styles.devNormal}>{`Target: ${target}${preset.unit ? ` ${preset.unit}` : ''}`}</Text>;
+    return (
+      <Text style={styles.devNormal}>{`Preset: ${target}${preset.unit ? ` ${preset.unit}` : ''}`}</Text>
+    );
   };
 
   const topUnacknowledgedAlert = useMemo(
     () => sessionAlerts.find((alert) => !alert.acknowledged) ?? null,
     [sessionAlerts],
   );
+
+  const [popupAlert, setPopupAlert] = useState<AlertResponse | null>(null);
+  const popupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const popupOpacity = useRef(new Animated.Value(0)).current;
+  /** Avoid re-showing the same alert snapshot after 4s dismiss; re-show only if message/status changes. */
+  const lastPopupSnapshotRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!topUnacknowledgedAlert) {
+      lastPopupSnapshotRef.current = null;
+      if (popupTimerRef.current) clearTimeout(popupTimerRef.current);
+      Animated.timing(popupOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() =>
+        setPopupAlert(null),
+      );
+      return;
+    }
+    const snapshot = `${topUnacknowledgedAlert.id}|${topUnacknowledgedAlert.message}|${topUnacknowledgedAlert.alert_status}`;
+    if (snapshot === lastPopupSnapshotRef.current) return;
+    lastPopupSnapshotRef.current = snapshot;
+
+    if (popupTimerRef.current) clearTimeout(popupTimerRef.current);
+    setPopupAlert(topUnacknowledgedAlert);
+    Animated.sequence([
+      Animated.timing(popupOpacity, { toValue: 0, duration: 0, useNativeDriver: true }),
+      Animated.timing(popupOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+    ]).start();
+    popupTimerRef.current = setTimeout(() => {
+      Animated.timing(popupOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(() =>
+        setPopupAlert(null),
+      );
+    }, 4000);
+
+    return () => {
+      if (popupTimerRef.current) clearTimeout(popupTimerRef.current);
+    };
+  }, [
+    topUnacknowledgedAlert?.id,
+    topUnacknowledgedAlert?.message,
+    topUnacknowledgedAlert?.alert_status,
+    popupOpacity,
+  ]);
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error} />;
@@ -215,28 +310,39 @@ export function ActiveSessionScreen() {
     }
   };
 
+  const closeObservationModal = () => {
+    setObsVisible(false);
+  };
+
+  const openObservationModal = () => {
+    setObsVisible(true);
+  };
+
   const handleObservationSubmit = async () => {
-    setObsError(null);
     const value = Number(obsValue);
     if (!Number.isFinite(value)) {
-      setObsError('Observation value must be a valid number');
+      Alert.alert('Alert', 'Observation value must be a valid number.');
       return;
     }
+    const unit = observationUnitForType(obsType);
     try {
       setObsSubmitting(true);
       await addObservation(sessionId, {
         obs_type: obsType,
         value,
-        unit: obsType === 'soil_moisture' ? 'percent' : 'MPa',
+        unit,
         lat: sessionFeedsMap.position_tracking?.lat ?? undefined,
         lon: sessionFeedsMap.position_tracking?.lon ?? undefined,
         notes: obsNotes.trim() || undefined,
       });
-      setObsVisible(false);
+      closeObservationModal();
       setObsValue('');
       setObsNotes('');
     } catch (submitError) {
-      setObsError(submitError instanceof Error ? submitError.message : 'Failed to add observation');
+      Alert.alert(
+        'Alert',
+        submitError instanceof Error ? submitError.message : 'Failed to add observation.',
+      );
     } finally {
       setObsSubmitting(false);
     }
@@ -255,7 +361,7 @@ export function ActiveSessionScreen() {
     } catch (actionError) {
       setOptimisticStatus(null);
       Alert.alert(
-        'Session Action Failed',
+        'Alert',
         actionError instanceof Error ? actionError.message : 'Unable to update session status.',
       );
     }
@@ -268,7 +374,7 @@ export function ActiveSessionScreen() {
       nav.replace('SessionSummary', { sessionId: stopped.id });
     } catch (stopError) {
       Alert.alert(
-        'Stop Session Failed',
+        'Alert',
         stopError instanceof Error ? stopError.message : 'Unable to stop session.',
       );
     }
@@ -333,38 +439,24 @@ export function ActiveSessionScreen() {
         </View>
       </View>
 
+      {popupAlert ? (
+        <Animated.View style={[styles.alertPopupOverlay, { opacity: popupOpacity }]}>
+          <AlertNotificationPopup
+            alert={popupAlert}
+            onClose={() => {
+              if (popupTimerRef.current) clearTimeout(popupTimerRef.current);
+              lastPopupSnapshotRef.current = popupAlert
+                ? `${popupAlert.id}|${popupAlert.message}|${popupAlert.alert_status}`
+                : lastPopupSnapshotRef.current;
+              Animated.timing(popupOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() =>
+                setPopupAlert(null),
+              );
+            }}
+          />
+        </Animated.View>
+      ) : null}
+
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {topUnacknowledgedAlert ? (
-          <Card
-            variant="filled"
-            spacing="default"
-            style={[
-              styles.inlineAlertCard,
-              topUnacknowledgedAlert.alert_status === 'critical'
-                ? styles.inlineAlertCritical
-                : styles.inlineAlertWarning,
-            ]}
-          >
-            <View style={styles.inlineAlertRow}>
-              <Feather
-                name={topUnacknowledgedAlert.alert_status === 'critical' ? 'x-circle' : 'alert-triangle'}
-                size={18}
-                color={topUnacknowledgedAlert.alert_status === 'critical' ? '#C00000' : '#B7791F'}
-              />
-              <View style={styles.inlineAlertCopy}>
-                <Text
-                  style={[
-                    styles.inlineAlertTitle,
-                    { color: topUnacknowledgedAlert.alert_status === 'critical' ? '#C00000' : '#B7791F' },
-                  ]}
-                >
-                  {topUnacknowledgedAlert.alert_status === 'critical' ? 'Error' : 'Warning'}
-                </Text>
-                <Text style={styles.inlineAlertMessage}>{topUnacknowledgedAlert.message}</Text>
-              </View>
-            </View>
-          </Card>
-        ) : null}
 
         <Card variant="filled" spacing="default" style={[styles.machineBanner, { backgroundColor: machineBg }]}>
           <Text style={[styles.machineText, { color: machineColor }]}>{machineStatus}</Text>
@@ -446,12 +538,18 @@ export function ActiveSessionScreen() {
                   <Text style={styles.alertMsg}>{alert.message}</Text>
                 </View>
                 <Button
-                  size="sm"
                   variant="outline"
                   disabled={alert.acknowledged || ackLoadingId === alert.id}
                   onPress={() => handleAck(alert.id)}
+                  style={[styles.matchingOutlineButton, styles.acknowledgeButton]}
+                  accessibilityLabel={alert.acknowledged ? 'Acknowledged' : 'Acknowledge alert'}
                 >
-                  {alert.acknowledged ? 'Acknowledged' : 'Acknowledge'}
+                  <View style={styles.actionButtonContent}>
+                    <Feather name="check-circle" size={16} color={colors.primary} />
+                    <Text style={styles.outlineButtonText}>
+                      {alert.acknowledged ? 'Acknowledged' : 'Acknowledge'}
+                    </Text>
+                  </View>
                 </Button>
               </View>
             ))
@@ -459,111 +557,211 @@ export function ActiveSessionScreen() {
         </Card>
 
         <GPSInfoPanel reading={sessionFeedsMap.position_tracking} />
+      </ScrollView>
 
+      {/* Full-width log row above Pause | Stop (matches design: one primary row, then equal inline controls) */}
+      <View style={styles.bottomActionsColumn}>
         <Button
           variant="outline"
           fullWidth
-          onPress={() => setObsVisible(true)}
-          style={styles.matchingOutlineButton}
+          onPress={openObservationModal}
+          style={styles.logObservationButton}
+          accessibilityLabel="Log field observation"
         >
           <View style={styles.actionButtonContent}>
-            <Feather name="edit-2" size={16} color={colors.primary} />
-            <Text style={styles.outlineButtonText}>Log Field Observation</Text>
+            <Feather name="plus" size={18} color={colors.text} />
+            <Text style={styles.logObservationLabel}>Log Field Observation</Text>
           </View>
         </Button>
-      </ScrollView>
 
-      <View style={[styles.bottomRow, isCompactScreen && styles.bottomRowCompact]}>
-        <View style={styles.sessionActionSlot}>
-          <Button
-            size="lg"
-            variant="outline"
-            onPress={onPauseResume}
-            disabled={actionLoading}
-            style={[
-              styles.sessionActionButton,
-              isCompactScreen && styles.sessionActionButtonCompact,
-              displayStatus === 'active' ? styles.pauseBtn : styles.resumeBtn,
-            ]}
-          >
-            <View style={styles.actionButtonContent}>
-              <Feather
-                name={displayStatus === 'active' ? 'pause' : 'play'}
-                size={16}
-                color={displayStatus === 'active' ? '#C55A11' : colors.primary}
-              />
-              <Text
-                style={[
-                  displayStatus === 'active' ? styles.pauseButtonText : styles.resumeButtonText,
-                  isCompactScreen &&
-                    (displayStatus === 'active'
-                      ? styles.pauseButtonTextCompact
-                      : styles.resumeButtonTextCompact),
-                ]}
-              >
-                {displayStatus === 'active' ? 'Pause' : 'Resume'}
-              </Text>
-            </View>
-          </Button>
-        </View>
-        <View style={styles.sessionActionSlot}>
-          <Button
-            size="lg"
-            variant="outline"
-            onPress={onStop}
-            disabled={actionLoading}
-            style={[styles.sessionActionButton, isCompactScreen && styles.sessionActionButtonCompact, styles.stopBtn]}
-          >
-            <View style={styles.actionButtonContent}>
-              <Feather name="square" size={16} color="#DC2626" />
-              <Text style={[styles.stopButtonText, isCompactScreen && styles.stopButtonTextCompact]}>
-                Stop Session
-              </Text>
-            </View>
-          </Button>
+        <View style={styles.bottomRow}>
+          <View style={styles.sessionActionSlot}>
+            <Button
+              size="lg"
+              variant="outline"
+              onPress={onPauseResume}
+              disabled={actionLoading}
+              style={[
+                styles.sessionActionButton,
+                isCompactScreen && styles.sessionActionButtonCompact,
+                displayStatus === 'active' ? styles.pauseBtn : styles.resumeBtn,
+              ]}
+            >
+              <View style={styles.actionButtonContent}>
+                <Feather
+                  name={displayStatus === 'active' ? 'pause' : 'play'}
+                  size={16}
+                  color={displayStatus === 'active' ? '#C55A11' : colors.primary}
+                />
+                <Text
+                  style={[
+                    displayStatus === 'active' ? styles.pauseButtonText : styles.resumeButtonText,
+                    isCompactScreen &&
+                      (displayStatus === 'active'
+                        ? styles.pauseButtonTextCompact
+                        : styles.resumeButtonTextCompact),
+                  ]}
+                >
+                  {displayStatus === 'active' ? 'Pause' : 'Resume'}
+                </Text>
+              </View>
+            </Button>
+          </View>
+          <View style={styles.sessionActionSlot}>
+            <Button
+              size="lg"
+              variant="outline"
+              onPress={onStop}
+              disabled={actionLoading}
+              style={[
+                styles.sessionActionButton,
+                isCompactScreen && styles.sessionActionButtonCompact,
+                styles.stopBtn,
+              ]}
+            >
+              <View style={styles.actionButtonContent}>
+                <Feather name="square" size={16} color="#DC2626" />
+                <Text style={[styles.stopButtonText, isCompactScreen && styles.stopButtonTextCompact]}>
+                  Stop Session
+                </Text>
+              </View>
+            </Button>
+          </View>
         </View>
       </View>
 
-      <Modal visible={obsVisible} transparent animationType="slide" onRequestClose={() => setObsVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>Log Field Observation</Text>
-            <Picker
-              label="Observation Type"
-              value={obsType}
-              onValueChange={(value) => setObsType(value as 'soil_moisture' | 'cone_index')}
-              items={[
-                { label: 'Soil Moisture', value: 'soil_moisture' },
-                { label: 'Cone Index', value: 'cone_index' },
-              ]}
-            />
-            <Input
-              label="Value"
-              value={obsValue}
-              onChangeText={setObsValue}
-              keyboardType="decimal-pad"
-              placeholder={obsType === 'soil_moisture' ? 'percent' : 'MPa'}
-            />
-            <Input
-              label="Notes (Optional)"
-              value={obsNotes}
-              onChangeText={setObsNotes}
-              placeholder="Add notes"
-            />
-            <Text style={styles.gpsReadOnly}>
-              GPS: {sessionFeedsMap.position_tracking?.lat ?? '--'}, {sessionFeedsMap.position_tracking?.lon ?? '--'}
-            </Text>
-            {obsError ? <Text style={styles.errorInline}>{obsError}</Text> : null}
-            <View style={styles.modalActions}>
-              <Button variant="outline" fullWidth onPress={() => setObsVisible(false)} disabled={obsSubmitting}>
-                Cancel
-              </Button>
-              <Button variant="primary" fullWidth onPress={handleObservationSubmit} loading={obsSubmitting}>
-                Submit
-              </Button>
-            </View>
-          </View>
-        </View>
+      <Modal visible={obsVisible} transparent animationType="slide" onRequestClose={closeObservationModal}>
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+        >
+          <Pressable style={styles.modalOverlay} onPress={closeObservationModal} accessibilityRole="button">
+            <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.obsModalHeader}>
+                <View style={styles.obsModalHeaderSide} />
+                <Text style={styles.obsModalTitle}>Log Field Observation</Text>
+                <Pressable
+                  style={styles.obsModalClose}
+                  onPress={closeObservationModal}
+                  disabled={obsSubmitting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close observation form"
+                >
+                  <Feather name="x" size={22} color="#6B7280" />
+                </Pressable>
+              </View>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalScrollContent}
+              >
+                <View style={styles.obsTypePills}>
+                  <Pressable
+                    onPress={() => setObsType('soil_moisture')}
+                    style={[styles.obsTypePill, obsType === 'soil_moisture' && styles.obsTypePillActive]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: obsType === 'soil_moisture' }}
+                    accessibilityLabel="Soil moisture observation"
+                  >
+                    <Text
+                      style={[
+                        styles.obsTypePillText,
+                        obsType === 'soil_moisture' && styles.obsTypePillTextActive,
+                      ]}
+                    >
+                      Soil Moisture
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setObsType('cone_index')}
+                    style={[styles.obsTypePill, obsType === 'cone_index' && styles.obsTypePillActive]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: obsType === 'cone_index' }}
+                    accessibilityLabel="Cone index observation"
+                  >
+                    <Text
+                      style={[styles.obsTypePillText, obsType === 'cone_index' && styles.obsTypePillTextActive]}
+                    >
+                      Cone Index
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.obsValueUnitRow}>
+                  <View style={styles.obsFieldHalf}>
+                    <Text style={styles.obsUpperLabel}>Value</Text>
+                    <Input
+                      value={obsValue}
+                      onChangeText={setObsValue}
+                      keyboardType="decimal-pad"
+                      placeholder="0"
+                      containerStyle={styles.obsInputFlush}
+                    />
+                  </View>
+                  <View style={styles.obsFieldHalf}>
+                    <Text style={styles.obsUpperLabel}>Unit</Text>
+                    <Input
+                      value={observationUnitForType(obsType)}
+                      editable={false}
+                      containerStyle={styles.obsInputFlush}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.obsGpsBlock}>
+                  <Text style={styles.obsUpperLabel}>GPS (auto)</Text>
+                  <Text style={styles.obsGpsValue}>{observationGpsLine}</Text>
+                </View>
+
+                <View>
+                  <Text style={styles.obsUpperLabel}>Notes (optional)</Text>
+                  <Input
+                    value={obsNotes}
+                    onChangeText={setObsNotes}
+                    placeholder="Additional notes..."
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                    style={styles.obsNotesInput}
+                    containerStyle={styles.obsInputFlush}
+                  />
+                </View>
+              </ScrollView>
+              <View style={styles.modalActions}>
+                <View style={styles.sessionActionSlot}>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    fullWidth
+                    onPress={closeObservationModal}
+                    disabled={obsSubmitting}
+                    style={[styles.sessionActionButton, styles.modalCancelBtn]}
+                    accessibilityLabel="Cancel observation"
+                  >
+                    <Text style={styles.modalCancelLabel}>Cancel</Text>
+                  </Button>
+                </View>
+                <View style={styles.sessionActionSlot}>
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    onPress={handleObservationSubmit}
+                    loading={obsSubmitting}
+                    style={[styles.sessionActionButton, styles.modalSubmitBtn]}
+                    accessibilityLabel="Submit observation"
+                  >
+                    <Text style={styles.modalSubmitLabel} numberOfLines={1} adjustsFontSizeToFit>
+                      Submit Observation
+                    </Text>
+                  </Button>
+                </View>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -598,6 +796,19 @@ export function ActiveSessionScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  alertPopupOverlay: {
+    position: 'absolute',
+    top: 80,
+    left: spacing.lg,
+    right: spacing.lg,
+    zIndex: 200,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    borderRadius: 10,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -629,39 +840,9 @@ const styles = StyleSheet.create({
   statusTextActive: { color: colors.success },
   statusTextPaused: { color: colors.warning },
   elapsed: { ...typography.labelSmall, color: colors.text, fontWeight: '700', marginTop: spacing.xs },
-  scrollContent: { padding: spacing.lg, gap: spacing.md, paddingBottom: 120 },
+  scrollContent: { padding: spacing.lg, gap: spacing.md, paddingBottom: 200 },
   machineBanner: { width: '100%' },
   machineText: { ...typography.h5, fontWeight: '700', textAlign: 'center' },
-  inlineAlertCard: {
-    borderWidth: 1,
-    borderRadius: 10,
-  },
-  inlineAlertWarning: {
-    backgroundColor: '#FFF8DB',
-    borderColor: '#E9D9A3',
-  },
-  inlineAlertCritical: {
-    backgroundColor: '#FDECEC',
-    borderColor: '#E6B8B7',
-  },
-  inlineAlertRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  inlineAlertCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  inlineAlertTitle: {
-    ...typography.bodySmall,
-    fontWeight: '700',
-  },
-  inlineAlertMessage: {
-    ...typography.bodySmall,
-    color: colors.text,
-    fontWeight: '600',
-  },
   sectionTitle: { ...typography.label, color: colors.text, marginBottom: spacing.sm },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },
   k: { ...typography.bodySmall, color: colors.muted },
@@ -677,6 +858,7 @@ const styles = StyleSheet.create({
   alertRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     paddingVertical: spacing.xs,
     paddingLeft: spacing.sm,
@@ -685,22 +867,36 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4 },
   alertBody: { flex: 1 },
   alertMsg: { ...typography.bodySmall, color: colors.text },
-  bottomRow: {
+  bottomActionsColumn: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    flexDirection: 'row',
-    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
     backgroundColor: colors.surface,
   },
-  bottomRowCompact: {
-    flexDirection: 'column',
-    paddingVertical: spacing.sm,
+  logObservationButton: {
+    width: '100%',
+    minHeight: 48,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    borderRadius: 14,
+  },
+  logObservationLabel: {
+    ...typography.label,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: spacing.sm,
   },
   sessionActionButton: {
     width: '100%',
@@ -793,16 +989,117 @@ const styles = StyleSheet.create({
   confirmTitle: { ...typography.h5, color: colors.text, fontWeight: '700' },
   confirmText: { ...typography.bodySmall, color: colors.muted },
   confirmActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  modalKeyboardRoot: { flex: 1 },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
   modalSheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.lg,
     borderTopRightRadius: borderRadius.lg,
-    padding: spacing.lg,
-    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    maxHeight: '88%',
+    width: '100%',
   },
-  modalTitle: { ...typography.h5, color: colors.text, fontWeight: '700', marginBottom: spacing.xs },
-  gpsReadOnly: { ...typography.bodySmall, color: colors.muted, marginTop: spacing.xs },
-  errorInline: { ...typography.bodySmall, color: colors.danger },
-  modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  modalScroll: { maxHeight: 460 },
+  modalScrollContent: { gap: spacing.md, paddingBottom: spacing.xs },
+  obsModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  obsModalHeaderSide: { width: 40 },
+  obsModalTitle: {
+    ...typography.h5,
+    color: colors.text,
+    fontWeight: '700',
+    flex: 1,
+    textAlign: 'center',
+  },
+  obsModalClose: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  obsTypePills: { flexDirection: 'row', gap: spacing.sm },
+  obsTypePill: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: '#D0D5DD',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  obsTypePillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  obsTypePillText: {
+    ...typography.label,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  obsTypePillTextActive: { color: '#FFFFFF' },
+  obsValueUnitRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
+  obsFieldHalf: { flex: 1, minWidth: 0 },
+  obsUpperLabel: {
+    ...typography.labelSmall,
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  obsInputFlush: { marginVertical: 0 },
+  obsGpsBlock: { marginTop: spacing.xs },
+  obsGpsValue: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '500',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: borderRadius.md,
+    backgroundColor: '#F9FAFB',
+  },
+  obsNotesInput: {
+    minHeight: 100,
+    paddingTop: spacing.sm,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  modalCancelBtn: {
+    borderColor: '#D0D5DD',
+    backgroundColor: '#FFFFFF',
+  },
+  modalCancelLabel: {
+    ...typography.label,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  modalSubmitBtn: {
+    borderWidth: 0,
+    backgroundColor: colors.primary,
+  },
+  modalSubmitLabel: {
+    ...typography.label,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  acknowledgeButton: {
+    flexShrink: 0,
+    minHeight: 48,
+  },
 });

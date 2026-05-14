@@ -1,4 +1,9 @@
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+
 import { api } from './api';
+import { getAccessToken } from './authStorage';
+import { showSessionExpiredDialog } from './sessionExpired';
 
 export interface PresetValueCreate {
   parameter_name: string;
@@ -49,6 +54,7 @@ export interface AlertResponse {
 export interface SessionResponse {
   id: string;
   tractor_id: string;
+  tractor_name?: string | null;
   implement_id?: string;
   operator_id: string;
   operator_name?: string;
@@ -95,6 +101,7 @@ export interface AreaSummaryResponse {
 }
 
 export interface AlertSummaryItem {
+  id?: string;
   feed_key: string;
   alert_type: string;
   alert_status: string;
@@ -137,6 +144,7 @@ export interface SessionSummaryReport {
   ended_at?: string | null;
   duration_minutes?: number | null;
   area_ha?: number | null;
+  total_distance_m?: number | null;
   total_cost_inr?: number | null;
   charge_per_ha_applied?: number | null;
   cost_note?: string | null;
@@ -154,6 +162,7 @@ export interface OperationChargeRead {
   owner_id: string;
   operation_type: string;
   charge_per_ha: number;
+  charge_per_hour?: number | null;
   currency: string;
   created_at: string;
   updated_at: string;
@@ -161,11 +170,13 @@ export interface OperationChargeRead {
 
 export interface OperationChargeCreateInput {
   operation_type: string;
-  charge_per_ha: number;
+  charge_per_ha?: number;
+  charge_per_hour?: number | null;
 }
 
 export interface OperationChargeUpdateInput {
   charge_per_ha?: number;
+  charge_per_hour?: number | null;
 }
 
 export interface FieldObservationCreate {
@@ -226,9 +237,37 @@ export async function getAreaSummary(sessionId: string): Promise<AreaSummaryResp
   return data;
 }
 
+function parseReportNumber(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string') {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/** Normalize report JSON (snake/camel, numeric strings) so cost fields always wire to the UI. */
+function normalizeSessionSummaryReport(raw: SessionSummaryReport): SessionSummaryReport {
+  const r = raw as unknown as Record<string, unknown>;
+  const total = parseReportNumber(r.total_cost_inr ?? r.totalCostInr);
+  const rate = parseReportNumber(r.charge_per_ha_applied ?? r.chargePerHaApplied);
+  const area = parseReportNumber(r.area_ha ?? r.areaHa);
+  const dist = parseReportNumber(r.total_distance_m ?? r.totalDistanceM);
+  const duration = parseReportNumber(r.duration_minutes ?? r.durationMinutes);
+  return {
+    ...raw,
+    area_ha: area ?? raw.area_ha ?? null,
+    total_distance_m: dist ?? raw.total_distance_m ?? null,
+    duration_minutes: duration ?? raw.duration_minutes ?? null,
+    total_cost_inr: total ?? raw.total_cost_inr ?? null,
+    charge_per_ha_applied: rate ?? raw.charge_per_ha_applied ?? null,
+  };
+}
+
 export async function getSessionReport(sessionId: string): Promise<SessionSummaryReport> {
   const { data } = await api.get<SessionSummaryReport>(`/reports/session/${sessionId}`);
-  return data;
+  return normalizeSessionSummaryReport(data);
 }
 
 export async function getOperationCharges(): Promise<OperationChargeRead[]> {
@@ -259,4 +298,44 @@ export async function addObservation(sessionId: string, data: FieldObservationCr
 export async function acknowledgeAlert(alertId: string): Promise<AlertResponse> {
   const { data } = await api.patch<AlertResponse>(`/alerts/${alertId}/acknowledge`);
   return data;
+}
+
+/**
+ * Download a session report (CSV or PDF) and open the system share dialog.
+ * Uses expo-file-system to write to cache, then expo-sharing to open.
+ */
+export async function downloadSessionExport(
+  sessionId: string,
+  format: 'csv' | 'pdf',
+): Promise<void> {
+  const token = await getAccessToken();
+  const baseUrl = api.defaults.baseURL ?? 'http://localhost:8000/api/v1';
+  const url = `${baseUrl}/reports/session/${sessionId}/export?format=${format}`;
+
+  const ext = format === 'pdf' ? 'pdf' : 'csv';
+  const filename = `session_${sessionId.slice(0, 8)}.${ext}`;
+  const localUri = `${FileSystem.cacheDirectory}${filename}`;
+
+  const downloadResult = await FileSystem.downloadAsync(url, localUri, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (downloadResult.status === 401) {
+    showSessionExpiredDialog();
+    throw new Error('Session expired. Please sign in again.');
+  }
+  if (downloadResult.status !== 200) {
+    throw new Error(`Export failed (status ${downloadResult.status})`);
+  }
+
+  const canShare = await Sharing.isAvailableAsync();
+  if (!canShare) {
+    throw new Error('Sharing is not available on this device');
+  }
+
+  await Sharing.shareAsync(downloadResult.uri, {
+    mimeType: format === 'pdf' ? 'application/pdf' : 'text/csv',
+    dialogTitle: `Session Report — ${format.toUpperCase()}`,
+    UTI: format === 'pdf' ? 'com.adobe.pdf' : 'public.comma-separated-values-text',
+  });
 }

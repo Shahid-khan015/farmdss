@@ -8,6 +8,7 @@ export interface SessionSummaryRow {
   area_ha: number | null;
   operator_name: string;
   wage_total: number | null;
+  total_cost_inr: number | null;
 }
 
 export interface ReportSummary {
@@ -22,7 +23,7 @@ export interface ReportSummary {
 }
 
 type ReportSummaryApi = Omit<ReportSummary, 'sessions'> & {
-  sessions: Array<Omit<SessionSummaryRow, 'wage_total'> & { wage_total_amount?: number | null }>;
+  sessions: Array<Omit<SessionSummaryRow, 'wage_total' | 'total_cost_inr'> & { wage_total_amount?: number | null; total_cost_inr?: number | null }>;
 };
 
 export async function getReportSummary(params: {
@@ -44,6 +45,7 @@ export async function getReportSummary(params: {
       area_ha: s.area_ha,
       operator_name: s.operator_name,
       wage_total: s.wage_total_amount ?? null,
+      total_cost_inr: s.total_cost_inr ?? null,
     })),
   };
 }

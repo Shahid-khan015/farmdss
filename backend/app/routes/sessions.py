@@ -31,6 +31,7 @@ from app.schemas.session import (
 
 router = APIRouter(prefix="/api/v1/sessions", tags=["Sessions"])
 alerts_router = APIRouter(prefix="/api/v1/alerts", tags=["Sessions"])
+GPS_FEED_KEYS = ("position_tracking", "gpsloc")
 
 
 def _assert_session_access(session: OperationSession, user: User, db: Session) -> None:
@@ -51,6 +52,9 @@ def _assert_session_access(session: OperationSession, user: User, db: Session) -
 def _to_session_response(obj: OperationSession) -> SessionResponse:
     payload = SessionResponse.model_validate(obj).model_dump()
     payload["operator_name"] = obj.operator.name if getattr(obj, "operator", None) is not None else None
+    tractor = getattr(obj, "tractor", None)
+    if tractor is not None:
+        payload["tractor_name"] = tractor.name
     alerts = getattr(obj, "alerts", None)
     if alerts is not None:
         payload["alerts_count"] = len(alerts)
@@ -239,11 +243,12 @@ def stop_session(
     if session.status not in ("active", "paused"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session is not active or paused")
 
-    session.ended_at = datetime.utcnow()
+    session.ended_at = datetime.now(timezone.utc)
     session.status = "completed"
     from app.services.field_area_service import finalize_session_area
     from app.services.operation_cost_service import compute_session_cost
     finalize_session_area(session_id, db)
+    db.refresh(session)
     compute_session_cost(session, db)
     db.commit()
     db.refresh(session)
@@ -307,9 +312,11 @@ def list_active_sessions(
     else:
         return []
     rows = db.scalars(
-        stmt.options(selectinload(OperationSession.operator), selectinload(OperationSession.alerts)).order_by(
-            OperationSession.started_at.desc()
-        )
+        stmt.options(
+            selectinload(OperationSession.operator),
+            selectinload(OperationSession.tractor),
+            selectinload(OperationSession.alerts),
+        ).order_by(OperationSession.started_at.desc())
     ).all()
     return [_to_session_response(r) for r in rows]
 
@@ -325,6 +332,7 @@ def get_session_detail(
         .where(OperationSession.id == session_id)
         .options(
             selectinload(OperationSession.operator),
+            selectinload(OperationSession.tractor),
             selectinload(OperationSession.preset_values),
             selectinload(OperationSession.alerts),
             selectinload(OperationSession.field_observations),
@@ -355,6 +363,7 @@ def list_sessions(
 ):
     stmt = select(OperationSession).options(
         selectinload(OperationSession.operator),
+        selectinload(OperationSession.tractor),
         selectinload(OperationSession.alerts),
     )
     if current_user.role == "operator":
@@ -402,7 +411,10 @@ def create_observation(
             .where(
                 and_(
                     IoTReading.session_id == session_id,
-                    IoTReading.feed_key == "gpsloc",
+                    or_(
+                        IoTReading.feed_key == GPS_FEED_KEYS[0],
+                        IoTReading.feed_key == GPS_FEED_KEYS[1],
+                    ),
                 )
             )
             .order_by(IoTReading.device_timestamp.desc())
@@ -466,7 +478,10 @@ def get_session_gps_path(
         .where(
             and_(
                 IoTReading.session_id == session_id,
-                IoTReading.feed_key == "gpsloc",
+                or_(
+                    IoTReading.feed_key == GPS_FEED_KEYS[0],
+                    IoTReading.feed_key == GPS_FEED_KEYS[1],
+                ),
             )
         )
         .order_by(IoTReading.device_timestamp.asc())
@@ -538,15 +553,21 @@ def get_session_area_summary(
         .where(
             and_(
                 IoTReading.session_id == session_id,
-                IoTReading.feed_key == "gpsloc",
+                or_(
+                    IoTReading.feed_key == GPS_FEED_KEYS[0],
+                    IoTReading.feed_key == GPS_FEED_KEYS[1],
+                ),
             )
         )
     ) or 0
 
     if session.area_ha is None and session.status == "completed":
         from app.services.field_area_service import finalize_session_area
+        from app.services.operation_cost_service import compute_session_cost
 
         finalize_session_area(session_id, db)
+        db.refresh(session)
+        compute_session_cost(session, db)
         db.commit()
         db.refresh(session)
 
@@ -624,7 +645,7 @@ def acknowledge_alert(
             _assert_session_access(session, current_user, db)
 
     alert.acknowledged = True
-    alert.acknowledged_at = datetime.utcnow()
+    alert.acknowledged_at = datetime.now(timezone.utc)
     alert.acknowledged_by = current_user.id
     db.commit()
     db.refresh(alert)

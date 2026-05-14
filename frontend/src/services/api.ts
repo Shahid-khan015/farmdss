@@ -1,7 +1,8 @@
-import axios from 'axios';
+import axios, { isAxiosError } from 'axios';
 import { Platform } from 'react-native';
 
 import { getAccessToken } from './authStorage';
+import { showSessionExpiredDialog } from './sessionExpired';
 
 const DEFAULT_LOCAL_API_URL = 'http://localhost:8000/api/v1';
 const USE_ADB_REVERSE =
@@ -32,6 +33,21 @@ export const api = axios.create({
   timeout: 20000,
 });
 
+/** 401 on protected routes — expired/invalid access token. Skip auth endpoints (wrong password is also 401). */
+function isSessionExpiredUnauthorized(error: unknown): boolean {
+  if (!isAxiosError(error)) return false;
+  if (error.response?.status !== 401) return false;
+  const url = String(error.config?.url ?? '');
+  if (
+    url.includes('/auth/login') ||
+    url.includes('/auth/register') ||
+    url.includes('/auth/logout')
+  ) {
+    return false;
+  }
+  return true;
+}
+
 api.interceptors.request.use(async (config) => {
   const token = await getAccessToken();
   if (token) {
@@ -44,6 +60,10 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (resp) => resp,
   (err) => {
+    if (isSessionExpiredUnauthorized(err)) {
+      showSessionExpiredDialog();
+    }
+
     const detail = err?.response?.data?.detail;
     const fallback = err?.message ?? 'Request failed';
 

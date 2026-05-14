@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  PanResponder,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -8,6 +9,7 @@ import {
 } from 'react-native';
 import { Button, FAB, Text } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   BookOpen,
   Check,
@@ -30,11 +32,20 @@ import { useImplements, useDeleteImplement } from '../hooks/useImplements';
 import type { Implement } from '../types/implement';
 import { fmtNum } from '../utils/formatters';
 import { colors } from '../constants/colors';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  OwnerListNavHeader,
+  ownerListScrollPaddingTop,
+} from '../components/navigation/OwnerListNavHeader';
 
 export function ImplementListScreen() {
   const nav = useNavigation<any>();
+  const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const isOwner = user?.role === 'owner';
   const [q, setQ] = useState('');
   const [tab, setTab] = useState<'library' | 'custom'>('library');
+  const tabs: Array<'library' | 'custom'> = ['library', 'custom'];
 
   const params = useMemo(
     () => ({ q: q.trim() || undefined, limit: 50, offset: 0, sort: 'name' as const }),
@@ -48,10 +59,43 @@ export function ImplementListScreen() {
   const customItems = items.filter((item) => !item.is_library);
   const activeItems = tab === 'library' ? libraryItems : customItems;
 
+  const setAdjacentTab = (direction: 'left' | 'right') => {
+    const currentIndex = tabs.indexOf(tab);
+    const nextIndex =
+      direction === 'left'
+        ? Math.min(currentIndex + 1, tabs.length - 1)
+        : Math.max(currentIndex - 1, 0);
+
+    if (nextIndex !== currentIndex) {
+      setTab(tabs[nextIndex]);
+    }
+  };
+
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        Math.abs(gestureState.dx) > 24 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2,
+      onMoveShouldSetPanResponderCapture: (_, gestureState) =>
+        Math.abs(gestureState.dx) > 24 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2,
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx <= -48) {
+          setAdjacentTab('left');
+        } else if (gestureState.dx >= 48) {
+          setAdjacentTab('right');
+        }
+      },
+    }),
+  ).current;
+
   return (
     <View style={styles.container}>
+      {isOwner ? <OwnerListNavHeader title="Implements" /> : null}
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        {...panResponder.panHandlers}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isOwner ? { paddingTop: ownerListScrollPaddingTop(insets.top) } : null,
+        ]}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} />}
         showsVerticalScrollIndicator={false}
       >

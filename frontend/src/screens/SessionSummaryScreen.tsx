@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,18 +10,19 @@ import {
 import { Text } from 'react-native-paper';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../components/common/Button';
-import { AlertNotificationPopup } from '../components/common/AlertNotificationPopup';
 import { Card } from '../components/common/Card';
 import { ErrorMessage } from '../components/common/ErrorMessage';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { colors } from '../constants/colors';
 import { useAuth } from '../contexts/AuthContext';
+import { useIoTDashboard } from '../hooks/useIoTDashboard';
 import { useSessionDetail } from '../hooks/useSession';
 import { useImplements } from '../hooks/useImplements';
 import { useTractors } from '../hooks/useTractors';
-import { getAreaSummary, getSessionReport, type SessionSummaryReport } from '../services/SessionService';
+import { downloadSessionExport, getAreaSummary, getSessionReport, type SessionSummaryReport } from '../services/SessionService';
 import { borderRadius, spacing, typography } from '../theme';
 
 function fmtDate(v?: string) {
@@ -61,10 +63,38 @@ function fmtArea(area?: number | null): string {
   return `${area.toFixed(2)} ha`;
 }
 
+function fmtDistance(metres?: number | null): string {
+  if (metres == null || !Number.isFinite(metres)) return '--';
+  if (metres >= 1000) return `${(metres / 1000).toFixed(2)} km`;
+  return `${Math.round(metres)} m`;
+}
+
 function fmtMetricValue(value?: number | null, unit?: string): string {
   if (value == null || !Number.isFinite(value)) return '--';
   const precision = Math.abs(value) >= 100 ? 0 : Math.abs(value) >= 10 ? 1 : 2;
   return `${value.toFixed(precision)}${unit ? ` ${unit}` : ''}`;
+}
+
+function fmtCurrencyInr(value?: number | null | string): string {
+  const n = typeof value === 'string' ? Number(value) : value;
+  if (n == null || !Number.isFinite(n)) return '--';
+  return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function toNum(value: unknown): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isBillingPerHour(operationType?: string | null): boolean {
+  const o = (operationType ?? '').trim().toLowerCase();
+  return o === 'threshing' || o === 'grading';
+}
+
+function fmtBillableHours(hours: number | null): string {
+  if (hours == null || !Number.isFinite(hours)) return '--';
+  return `${hours.toFixed(2)} h`;
 }
 
 function statusBadgeStyles(status: string) {
@@ -112,13 +142,20 @@ function observationVisual(type?: string) {
   };
 }
 
+/** Stable list row key for alerts (id from report; fallback for older payloads). */
+function alertRowKey(alert: { id?: string; feed_key: string; created_at: string }): string {
+  return alert.id ?? `${alert.feed_key}|${alert.created_at}`;
+}
+
 export function SessionSummaryScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
   const sessionId = route.params?.sessionId as string;
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
   const { session, isLoading, error } = useSessionDetail(sessionId);
+  const iot = useIoTDashboard();
   const tractorsQ = useTractors({ limit: 100, offset: 0 });
   const implementsQ = useImplements({ limit: 100, offset: 0 });
 
@@ -129,7 +166,8 @@ export function SessionSummaryScreen() {
   const [report, setReport] = useState<SessionSummaryReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
-  const [dismissedPopupAlertId, setDismissedPopupAlertId] = useState<string | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<'csv' | 'pdf' | null>(null);
+  const reportFirstLoadRef = useRef(true);
 
   useEffect(() => {
     let alive = true;
@@ -187,10 +225,12 @@ export function SessionSummaryScreen() {
     let mounted = true;
     let intervalId: ReturnType<typeof setInterval> | null = null;
     let attempts = 0;
+    reportFirstLoadRef.current = true;
 
     const loadReport = async () => {
+      const showLoading = reportFirstLoadRef.current;
       try {
-        setReportLoading(true);
+        if (showLoading) setReportLoading(true);
         setReportError(null);
         const data = await getSessionReport(sessionId);
         if (!mounted) return;
@@ -199,12 +239,28 @@ export function SessionSummaryScreen() {
         const hasMeaningfulSummary =
           (data.metrics?.length ?? 0) > 0 ||
           data.area_ha != null ||
+          data.total_distance_m != null ||
+          data.duration_minutes != null ||
           data.total_cost_inr != null ||
           (data.alerts?.length ?? 0) > 0 ||
           (data.field_observations?.length ?? 0) > 0;
+        const liveSession = session?.status === 'active' || session?.status === 'paused';
+        const completedSession = data.status === 'completed' || session?.status === 'completed';
+        const hasCompletedCoreSummary =
+          data.duration_minutes != null &&
+          (data.area_ha != null || data.total_distance_m != null);
+        const hasCompletedChargeSummary =
+          data.total_cost_inr != null ||
+          data.charge_per_ha_applied != null ||
+          (data.cost_note != null && data.cost_note.trim().length > 0);
 
         attempts += 1;
-        if (hasMeaningfulSummary || attempts >= 4) {
+        if (
+          (liveSession && hasMeaningfulSummary) ||
+          (!liveSession &&
+            ((completedSession && ((hasCompletedCoreSummary && hasCompletedChargeSummary) || attempts >= 12)) ||
+              (!completedSession && (hasMeaningfulSummary || attempts >= 6))))
+        ) {
           if (intervalId) {
             clearInterval(intervalId);
             intervalId = null;
@@ -214,7 +270,12 @@ export function SessionSummaryScreen() {
         if (!mounted) return;
         setReportError(loadError instanceof Error ? loadError.message : 'Failed to load session report');
       } finally {
-        if (mounted) setReportLoading(false);
+        if (mounted) {
+          if (reportFirstLoadRef.current) {
+            setReportLoading(false);
+            reportFirstLoadRef.current = false;
+          }
+        }
       }
     };
 
@@ -226,7 +287,7 @@ export function SessionSummaryScreen() {
       mounted = false;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [sessionId]);
+  }, [sessionId, session?.status]);
 
   const tractorName = useMemo(() => {
     const tractor = tractorsQ.data?.items?.find((x) => x.id === session?.tractor_id);
@@ -253,15 +314,6 @@ export function SessionSummaryScreen() {
   const criticalCount = alerts.filter((a) => a.alert_status === 'critical').length;
   const observations = report?.field_observations ?? session?.field_observations ?? [];
   const badge = statusBadgeStyles(session?.status ?? 'unknown');
-  const summaryPopupAlert =
-    alerts.find((alert) => !alert.acknowledged && alert.id !== dismissedPopupAlertId) ??
-    null;
-
-  useEffect(() => {
-    if (alerts.length === 0) {
-      setDismissedPopupAlertId(null);
-    }
-  }, [alerts.length]);
 
   const presetRows = useMemo(() => {
     if (report?.preset_summaries?.length) {
@@ -288,25 +340,80 @@ export function SessionSummaryScreen() {
     [report?.metrics],
   );
 
+  const sessionStartedMs = useMemo(() => {
+    if (!session?.started_at) return null;
+    const parsed = new Date(session.started_at).getTime();
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [session?.started_at]);
+
+  const sessionFeedsMap = useMemo(() => {
+    if (!sessionStartedMs) return iot.feedsMap;
+    return Object.fromEntries(
+      Object.entries(iot.feedsMap).map(([feedKey, reading]) => {
+        if (!reading?.device_timestamp) return [feedKey, undefined];
+        const readingMs = new Date(reading.device_timestamp).getTime();
+        if (!Number.isFinite(readingMs) || readingMs < sessionStartedMs) return [feedKey, undefined];
+        return [feedKey, reading];
+      }),
+    ) as typeof iot.feedsMap;
+  }, [iot.feedsMap, sessionStartedMs]);
+
+  const fallbackAvgSpeedValue =
+    metricsByFeed.forward_speed?.avg_value ?? toNum(sessionFeedsMap.forward_speed?.numeric_value);
+  const fallbackAvgSpeedUnit =
+    metricsByFeed.forward_speed?.unit ?? sessionFeedsMap.forward_speed?.unit ?? 'km/h';
+
+  /** Prefer API totals; derive rate × area (ha) or rate × hours (Threshing/Grading) when total missing. */
+  const resolvedOperationBilling = useMemo(() => {
+    const rate =
+      toNum(report?.charge_per_ha_applied) ?? toNum(session?.charge_per_ha_applied);
+    const area = toNum(areaHa) ?? toNum(report?.area_ha) ?? toNum(session?.area_ha);
+    const apiTotal = toNum(report?.total_cost_inr) ?? toNum(session?.total_cost_inr);
+    const perHour = isBillingPerHour(session?.operation_type);
+
+    let durationMinutes: number | null =
+      toNum(report?.duration_minutes) ?? toNum(session?.total_duration_minutes) ?? null;
+    if (durationMinutes == null && session?.ended_at && session?.started_at) {
+      const ms = new Date(session.ended_at).getTime() - new Date(session.started_at).getTime();
+      durationMinutes = Number.isFinite(ms) && ms >= 0 ? ms / 60000 : null;
+    }
+    const hours =
+      durationMinutes != null && Number.isFinite(durationMinutes) ? durationMinutes / 60 : null;
+
+    if (apiTotal != null) {
+      return { rate, area, hours, perHour, total: apiTotal };
+    }
+    if (perHour && rate != null && hours != null) {
+      return { rate, area, hours, perHour, total: Math.round(rate * hours * 100) / 100 };
+    }
+    if (!perHour && rate != null && area != null) {
+      return { rate, area, hours, perHour, total: Math.round(rate * area * 100) / 100 };
+    }
+    return { rate, area, hours, perHour, total: null as number | null };
+  }, [report, session, areaHa]);
+
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error} />;
   if (!session) return <ErrorMessage message="Session not found." />;
 
   const durationText =
-    session.total_duration_minutes != null
-      ? fmtDurationMinutes(session.total_duration_minutes)
-      : (() => {
-          const s = new Date(session.started_at).getTime();
-          const e = session.ended_at ? new Date(session.ended_at).getTime() : Date.now();
-          return fmtDurationMinutes((e - s) / 60000);
-        })();
+    report?.duration_minutes != null
+      ? fmtDurationMinutes(report.duration_minutes)
+      : session.total_duration_minutes != null
+        ? fmtDurationMinutes(session.total_duration_minutes)
+        : (() => {
+            const s = new Date(session.started_at).getTime();
+            const e = session.ended_at ? new Date(session.ended_at).getTime() : Date.now();
+            return fmtDurationMinutes((e - s) / 60000);
+          })();
 
   const summaryCards = [
     { label: 'Duration', value: durationText, icon: 'clock' as const },
-    { label: 'Area', value: fmtArea(areaHa ?? session.area_ha ?? null), icon: 'maximize-2' as const },
+    { label: 'Area', value: fmtArea(areaHa ?? report?.area_ha ?? session.area_ha ?? null), icon: 'maximize-2' as const },
+    { label: 'Distance', value: fmtDistance(report?.total_distance_m), icon: 'navigation' as const },
     {
       label: 'Avg Speed',
-      value: fmtMetricValue(metricsByFeed.forward_speed?.avg_value, metricsByFeed.forward_speed?.unit),
+      value: fmtMetricValue(fallbackAvgSpeedValue, fallbackAvgSpeedUnit),
       icon: 'trending-up' as const,
     },
     { label: 'Alerts', value: `${report?.total_alerts ?? alerts.length} total`, icon: 'alert-triangle' as const },
@@ -318,15 +425,22 @@ export function SessionSummaryScreen() {
   ];
 
   return (
-    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Pressable style={styles.backButton} onPress={() => nav.goBack()} accessibilityRole="button" accessibilityLabel="Go back">
-            <Feather name="arrow-left" size={20} color={colors.text} />
-          </Pressable>
-          <Text style={styles.title}>Session Summary</Text>
+    <View style={styles.screen}>
+      <View style={[styles.fixedHeaderShell, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Pressable style={styles.backButton} onPress={() => nav.goBack()} accessibilityRole="button" accessibilityLabel="Go back">
+              <Feather name="arrow-left" size={20} color={colors.text} />
+            </Pressable>
+            <Text style={styles.title}>Session Summary</Text>
+          </View>
         </View>
       </View>
+
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 84 }]}
+        showsVerticalScrollIndicator={false}
+      >
 
       <View style={styles.statusRow}>
         <View style={[styles.statusBadge, { backgroundColor: badge.backgroundColor }]}>
@@ -334,12 +448,6 @@ export function SessionSummaryScreen() {
         </View>
         <Text style={styles.statusMeta}>{fmtDateTime(session.started_at)}</Text>
       </View>
-
-      <AlertNotificationPopup
-        alert={summaryPopupAlert}
-        subtitle="Session summary"
-        onClose={() => setDismissedPopupAlertId((summaryPopupAlert as any)?.id ?? null)}
-      />
 
       <View style={styles.summaryGrid}>
         {summaryCards.map((card) => (
@@ -360,8 +468,8 @@ export function SessionSummaryScreen() {
             <ActivityIndicator color={colors.primary} />
             <Text style={styles.metaText}>Calculating field area...</Text>
           </View>
-        ) : areaHa != null ? (
-          <Text style={styles.heroValue}>{fmtArea(areaHa)}</Text>
+        ) : (areaHa ?? report?.area_ha ?? session.area_ha) != null ? (
+          <Text style={styles.heroValue}>{fmtArea(areaHa ?? report?.area_ha ?? session.area_ha ?? null)}</Text>
         ) : (
           <Text style={styles.heroMuted}>{areaUnavailable ? 'Area unavailable' : '--'}</Text>
         )}
@@ -374,30 +482,6 @@ export function SessionSummaryScreen() {
           <Text style={styles.metaText}>
             {report?.metrics?.length ? `${report.metrics.length} tracked sensor metrics captured` : 'No sensor metrics captured'}
           </Text>
-        </View>
-      </Card>
-
-      <Card variant="elevated" spacing="default" style={styles.detailCard}>
-        <Text style={styles.sectionLabel}>Operation Details</Text>
-        <View style={styles.detailRows}>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailKey}>Operation</Text>
-            <View style={styles.operationChip}>
-              <Text style={styles.operationChipText}>{session.operation_type}</Text>
-            </View>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailKey}>Tractor</Text>
-            <Text style={styles.detailValue}>{tractorName}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailKey}>Implement</Text>
-            <Text style={styles.detailValue}>{implementName}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailKey}>Operator</Text>
-            <Text style={styles.detailValue}>{operatorName}</Text>
-          </View>
         </View>
       </Card>
 
@@ -467,7 +551,7 @@ export function SessionSummaryScreen() {
             <Text style={styles.metaText}>No alerts recorded.</Text>
           ) : (
             alerts.slice(0, 3).map((alert) => (
-              <View key={alert.id} style={styles.alertItem}>
+              <View key={alertRowKey(alert)} style={styles.alertItem}>
                 <View
                   style={[
                     styles.alertDot,
@@ -514,25 +598,94 @@ export function SessionSummaryScreen() {
       </Card>
 
       <Card variant="elevated" spacing="comfortable" style={styles.costCard}>
-        <Text style={styles.sectionLabel}>Operation Charges</Text>
-        {reportLoading ? (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator color={colors.primary} />
-            <Text style={styles.metaText}>Loading operation cost...</Text>
+        <View style={styles.costHeaderRow}>
+          <View style={styles.costHeaderLeft}>
+            <Feather name="calculator" size={16} color={colors.success} />
+            <Text style={styles.sectionLabel}>Operation Charges</Text>
           </View>
-        ) : report?.total_cost_inr != null ? (
-          <>
-            <Text style={styles.costValue}>Rs {report.total_cost_inr.toFixed(2)}</Text>
-            <Text style={styles.metaText}>{report.cost_note ?? 'Cost calculated from the applied owner rate.'}</Text>
-            <Text style={styles.costFootnote}>Farmer pays operator</Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.pendingCost}>Cost pending - contact owner</Text>
-            {report?.cost_note ? <Text style={styles.metaText}>{report.cost_note}</Text> : null}
+          <View style={styles.operationPill}>
+            <Text style={styles.operationPillText}>{session.operation_type}</Text>
+          </View>
+        </View>
+
+        <View style={styles.detailRows}>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailKey}>Date</Text>
+            <Text style={styles.detailValue}>{fmtDate(session.started_at)}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailKey}>Operator</Text>
+            <Text style={styles.detailValue}>{operatorName}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailKey}>Tractor</Text>
+            <Text style={styles.detailValue}>{tractorName}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailKey}>Implement</Text>
+            <Text style={styles.detailValue}>{implementName}</Text>
+          </View>
+        </View>
+
+        <View style={styles.calculationBox}>
+          <Text style={styles.calcTitle}>Calculation</Text>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailKey}>Rate</Text>
+            <Text style={styles.detailValue}>
+              {resolvedOperationBilling.rate != null
+                ? `${fmtCurrencyInr(resolvedOperationBilling.rate).replace('.00', '')}${
+                    resolvedOperationBilling.perHour ? '/hr' : '/ha'
+                  }`
+                : '--'}
+            </Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailKey}>
+              {resolvedOperationBilling.perHour ? 'Billable time' : 'Area Covered'}
+            </Text>
+            <Text style={styles.detailValue}>
+              {resolvedOperationBilling.perHour
+                ? fmtBillableHours(resolvedOperationBilling.hours)
+                : fmtArea(resolvedOperationBilling.area ?? null)}
+            </Text>
+          </View>
+          <View style={styles.calcDivider} />
+          <View style={styles.calcFormulaRow}>
+            <Text style={styles.calcFormulaText}>
+              {resolvedOperationBilling.perHour
+                ? resolvedOperationBilling.rate != null && resolvedOperationBilling.hours != null
+                  ? `${fmtCurrencyInr(resolvedOperationBilling.rate).replace('.00', '')} × ${resolvedOperationBilling.hours.toFixed(2)} h`
+                  : 'Waiting for session duration / hourly rate'
+                : resolvedOperationBilling.rate != null && resolvedOperationBilling.area != null
+                  ? `${fmtCurrencyInr(resolvedOperationBilling.rate).replace('.00', '')} × ${resolvedOperationBilling.area.toFixed(2)} ha`
+                  : 'Waiting for finalized area/rate'}
+            </Text>
+            <Text style={styles.calcFormulaText}>=</Text>
+          </View>
+          <View style={styles.totalChargeBox}>
+            <View style={styles.totalChargeHeader}>
+              <Text style={styles.totalChargeLabel}>Total Charges</Text>
+              <Feather name="lock" size={14} color={colors.muted} />
+            </View>
+            {reportLoading && resolvedOperationBilling.total == null ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={styles.metaText}>Calculating...</Text>
+              </View>
+            ) : (
+              <Text style={styles.totalChargeValue}>
+                {resolvedOperationBilling.total != null
+                  ? fmtCurrencyInr(resolvedOperationBilling.total).replace('.00', '')
+                  : '--'}
+              </Text>
+            )}
+            <Text style={styles.totalChargeFootnote}>System computed - not editable</Text>
+            {report?.cost_note || session.cost_note ? (
+              <Text style={styles.metaText}>{report?.cost_note ?? session.cost_note}</Text>
+            ) : null}
             {reportError ? <Text style={styles.metaText}>{reportError}</Text> : null}
-          </>
-        )}
+          </View>
+        </View>
       </Card>
 
       {presetRows.length > 0 ? (
@@ -559,6 +712,54 @@ export function SessionSummaryScreen() {
         </Card>
       ) : null}
 
+      <Card variant="elevated" spacing="comfortable" style={styles.exportCard}>
+        <Text style={styles.sectionLabel}>Export Report</Text>
+        <View style={styles.exportRow}>
+          <Button
+            variant="outline"
+            style={styles.exportButton}
+            onPress={async () => {
+              setExportingFormat('csv');
+              try {
+                await downloadSessionExport(sessionId, 'csv');
+              } catch (e: any) {
+                Alert.alert('Export Failed', e?.message ?? 'Could not export CSV');
+              } finally {
+                setExportingFormat(null);
+              }
+            }}
+          >
+            <View style={styles.buttonContent}>
+              {exportingFormat === 'csv'
+                ? <ActivityIndicator size="small" color={colors.primary} />
+                : <Feather name="file-text" size={15} color={colors.primary} />}
+              <Text style={styles.outlineButtonText}>Export CSV</Text>
+            </View>
+          </Button>
+          <Button
+            variant="outline"
+            style={styles.exportButton}
+            onPress={async () => {
+              setExportingFormat('pdf');
+              try {
+                await downloadSessionExport(sessionId, 'pdf');
+              } catch (e: any) {
+                Alert.alert('Export Failed', e?.message ?? 'Could not export PDF');
+              } finally {
+                setExportingFormat(null);
+              }
+            }}
+          >
+            <View style={styles.buttonContent}>
+              {exportingFormat === 'pdf'
+                ? <ActivityIndicator size="small" color={colors.primary} />
+                : <Feather name="file" size={15} color={colors.primary} />}
+              <Text style={styles.outlineButtonText}>Export PDF</Text>
+            </View>
+          </Button>
+        </View>
+      </Card>
+
       <View style={styles.bottomButtons}>
         <Button
           variant="outline"
@@ -575,11 +776,27 @@ export function SessionSummaryScreen() {
           Back to Home
         </Button>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  fixedHeaderShell: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    elevation: 8,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
   scroll: {
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -587,7 +804,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   header: {
-    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -852,22 +1071,90 @@ const styles = StyleSheet.create({
   },
   costCard: {
     borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#DCEDE4',
   },
-  costValue: {
-    ...typography.h2,
-    color: colors.text,
+  costHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  costHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  operationPill: {
+    backgroundColor: '#FFF1DA',
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  operationPillText: {
+    ...typography.labelSmall,
+    color: '#B7791F',
     fontWeight: '700',
   },
-  pendingCost: {
-    ...typography.body,
-    color: colors.muted,
-    fontStyle: 'italic',
+  calculationBox: {
+    marginTop: spacing.sm,
+    backgroundColor: '#F5F7F8',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    gap: spacing.xs,
   },
-  costFootnote: {
+  calcTitle: {
+    ...typography.labelSmall,
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: spacing.xs,
+  },
+  calcDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#D9DEE3',
+    marginVertical: spacing.xs,
+  },
+  calcFormulaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  calcFormulaText: {
+    ...typography.bodySmall,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  totalChargeBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: '#D9DEE3',
+    padding: spacing.md,
+    marginTop: spacing.xs,
+  },
+  totalChargeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  totalChargeLabel: {
+    ...typography.labelSmall,
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  totalChargeValue: {
+    ...typography.h2,
+    color: colors.success,
+    fontWeight: '700',
+  },
+  totalChargeFootnote: {
     ...typography.bodySmall,
     color: colors.muted,
-    marginTop: spacing.sm,
-    fontStyle: 'italic',
+    marginTop: spacing.xs,
   },
   loadingRow: {
     flexDirection: 'row',
@@ -922,5 +1209,20 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.primary,
     fontWeight: '600',
+  },
+  exportCard: {
+    marginTop: spacing.sm,
+  },
+  exportRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  exportButton: {
+    flex: 1,
+    minHeight: 44,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
   },
 });

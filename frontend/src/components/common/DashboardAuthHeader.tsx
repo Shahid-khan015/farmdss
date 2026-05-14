@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleProp, StyleSheet, TextStyle, View, ViewStyle } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Feather } from '@expo/vector-icons';
 
@@ -12,27 +12,44 @@ type Props = {
   subtitle?: string;
   showMenuButton?: boolean;
   onMenuPress?: () => void;
+  containerStyle?: StyleProp<ViewStyle>;
+  menuButtonStyle?: StyleProp<ViewStyle>;
+  signOutButtonStyle?: StyleProp<ViewStyle>;
+  titleStyle?: StyleProp<TextStyle>;
+  subtitleStyle?: StyleProp<TextStyle>;
+  signOutLabelStyle?: StyleProp<TextStyle>;
 };
 
-export function DashboardAuthHeader({ title, subtitle, showMenuButton = false, onMenuPress }: Props) {
+export function DashboardAuthHeader({
+  title,
+  subtitle,
+  showMenuButton = false,
+  onMenuPress,
+  containerStyle,
+  menuButtonStyle,
+  signOutButtonStyle,
+  titleStyle,
+  subtitleStyle,
+  signOutLabelStyle,
+}: Props) {
   const { user, logout } = useAuth();
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, containerStyle]}>
       <View style={styles.left}>
         {showMenuButton ? (
           <Pressable
             onPress={onMenuPress}
             accessibilityRole="button"
             accessibilityLabel="Open sidebar"
-            style={styles.menuButton}
+            style={[styles.menuButton, menuButtonStyle]}
           >
             <Feather name="menu" size={20} color={colors.primary} />
           </Pressable>
         ) : null}
         <View style={styles.titles}>
-          <Text style={styles.title}>{title}</Text>
-          {subtitle ? <Text style={styles.sub}>{subtitle}</Text> : null}
+          <Text style={[styles.title, titleStyle]}>{title}</Text>
+          {subtitle ? <Text style={[styles.sub, subtitleStyle]}>{subtitle}</Text> : null}
         </View>
       </View>
       {user ? (
@@ -40,9 +57,9 @@ export function DashboardAuthHeader({ title, subtitle, showMenuButton = false, o
           onPress={() => logout()}
           accessibilityRole="button"
           accessibilityLabel="Sign out"
-          style={styles.signOutBtn}
+          style={[styles.signOutBtn, signOutButtonStyle]}
         >
-          <Text style={styles.signOutLabel}>Sign out</Text>
+          <Text style={[styles.signOutLabel, signOutLabelStyle]}>Sign out</Text>
         </Pressable>
       ) : null}
     </View>

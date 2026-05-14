@@ -32,6 +32,22 @@ const OPERATION_TYPES = [
   'Grading',
 ] as const;
 
+const PER_HOUR_TYPES = new Set<string>(['Threshing', 'Grading']);
+
+function isPerHourOperation(operationType: string): boolean {
+  return PER_HOUR_TYPES.has(operationType);
+}
+
+function formatChargeSummary(charge: OperationChargeRead | undefined, operationType: string): string {
+  if (!charge) return 'Not set';
+  if (isPerHourOperation(operationType)) {
+    const hr = charge.charge_per_hour;
+    if (hr != null && hr > 0) return `Rs ${hr}/hr`;
+    return 'Not set';
+  }
+  return charge.charge_per_ha > 0 ? `Rs ${charge.charge_per_ha}/ha` : 'Not set';
+}
+
 export function OperationChargesScreen() {
   const queryClient = useQueryClient();
   const [editingCharge, setEditingCharge] = useState<OperationChargeRead | null>(null);
@@ -48,15 +64,24 @@ export function OperationChargesScreen() {
     mutationFn: async () => {
       const parsed = Number(chargeValue);
       if (!Number.isFinite(parsed) || parsed <= 0) {
-        throw new Error('Enter a valid charge per hectare.');
+        throw new Error(
+          editingType && isPerHourOperation(editingType)
+            ? 'Enter a valid charge per hour.'
+            : 'Enter a valid charge per hectare.',
+        );
       }
       if (!editingType) {
         throw new Error('Select an operation type first.');
       }
+      const perHour = isPerHourOperation(editingType);
       if (editingCharge) {
-        return updateOperationCharge(editingCharge.id, { charge_per_ha: parsed });
+        return perHour
+          ? updateOperationCharge(editingCharge.id, { charge_per_hour: parsed, charge_per_ha: 0 })
+          : updateOperationCharge(editingCharge.id, { charge_per_ha: parsed, charge_per_hour: null });
       }
-      return createOperationCharge({ operation_type: editingType, charge_per_ha: parsed });
+      return perHour
+        ? createOperationCharge({ operation_type: editingType, charge_per_hour: parsed })
+        : createOperationCharge({ operation_type: editingType, charge_per_ha: parsed });
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['operation-charges'] });
@@ -82,7 +107,12 @@ export function OperationChargesScreen() {
     const existing = chargesMap.get(operationType) ?? null;
     setEditingCharge(existing);
     setEditingType(operationType);
-    setChargeValue(existing ? String(existing.charge_per_ha) : '');
+    if (isPerHourOperation(operationType)) {
+      const hr = existing?.charge_per_hour;
+      setChargeValue(hr != null && hr > 0 ? String(hr) : '');
+    } else {
+      setChargeValue(existing && existing.charge_per_ha > 0 ? String(existing.charge_per_ha) : '');
+    }
     setFormError(null);
   };
 
@@ -93,12 +123,16 @@ export function OperationChargesScreen() {
     setFormError(null);
   };
 
+  const perHourEditor = editingType ? isPerHourOperation(editingType) : false;
+
   return (
     <RoleGuard allowedRoles={['owner']}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Operation Charges</Text>
+        
         <Text style={styles.subtitle}>
-          Set the rate charged to farmers per hectare for each operation type.
+          Set rates per hectare for field operations (Tillage, Sowing, etc.).{' '}
+          <Text style={styles.subtitleStrong}>Threshing</Text> and{' '}
+          <Text style={styles.subtitleStrong}>Grading</Text> are billed per hour of session time (start to end).
         </Text>
 
         {chargesQuery.isLoading ? <LoadingSpinner /> : null}
@@ -116,9 +150,10 @@ export function OperationChargesScreen() {
                 <View style={styles.row}>
                   <View style={styles.rowText}>
                     <Text style={styles.operationName}>{operationType}</Text>
-                    <Text style={styles.operationCharge}>
-                      {charge ? `Rs ${charge.charge_per_ha}/ha` : 'Not set'}
-                    </Text>
+                    <Text style={styles.operationCharge}>{formatChargeSummary(charge, operationType)}</Text>
+                    {isPerHourOperation(operationType) ? (
+                      <Text style={styles.operationHint}>Per hour (session duration)</Text>
+                    ) : null}
                   </View>
                   <Button
                     variant="outline"
@@ -138,12 +173,14 @@ export function OperationChargesScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalSheet}>
               <Text style={styles.modalTitle}>{editingType}</Text>
-              <Text style={styles.modalSubtitle}>Charge per hectare (Rs):</Text>
+              <Text style={styles.modalSubtitle}>
+                {perHourEditor ? 'Charge per hour (Rs):' : 'Charge per hectare (Rs):'}
+              </Text>
               <Input
                 value={chargeValue}
                 onChangeText={setChargeValue}
                 keyboardType="decimal-pad"
-                placeholder="Enter amount"
+                placeholder={perHourEditor ? 'e.g. 500' : 'Enter amount'}
               />
               {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
               <View style={styles.modalActions}>
@@ -192,6 +229,10 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.muted,
   },
+  subtitleStrong: {
+    color: colors.text,
+    fontWeight: '600',
+  },
   list: {
     gap: spacing.md,
   },
@@ -203,38 +244,48 @@ const styles = StyleSheet.create({
   },
   rowText: {
     flex: 1,
+    minWidth: 0,
+    gap: spacing.xs,
   },
   operationName: {
-    ...typography.h5,
+    ...typography.label,
     color: colors.text,
+    fontWeight: '700',
   },
   operationCharge: {
-    ...typography.bodySmall,
+    ...typography.body,
     color: colors.muted,
-    marginTop: spacing.xs,
+  },
+  operationHint: {
+    ...typography.bodySmall,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  errorText: {
+    ...typography.bodySmall,
+    color: colors.danger,
   },
   matchingOutlineButton: {
-    width: '100%',
-    minHeight: 48,
+    minHeight: 44,
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: colors.primary,
   },
   matchingPrimaryButton: {
-    width: '100%',
-    minHeight: 48,
+    minHeight: 44,
+    backgroundColor: colors.primary,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
   },
   modalSheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: borderRadius.lg,
     borderTopRightRadius: borderRadius.lg,
     padding: spacing.lg,
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   modalTitle: {
     ...typography.h5,
@@ -253,9 +304,5 @@ const styles = StyleSheet.create({
   modalActionSlot: {
     flex: 1,
     minWidth: 0,
-  },
-  errorText: {
-    ...typography.bodySmall,
-    color: colors.danger,
   },
 });

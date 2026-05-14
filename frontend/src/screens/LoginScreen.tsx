@@ -93,6 +93,7 @@ export function LoginScreen() {
         secureTextEntry
         textContentType="password"
         autoComplete="password"
+        placeholder="Enter your password"
       />
 
       <Button

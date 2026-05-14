@@ -107,6 +107,7 @@ class AlertListResponse(BaseModel):
 class AlertSummaryItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    id: uuid.UUID
     feed_key: str
     alert_type: str
     alert_status: str
@@ -156,6 +157,7 @@ class SessionResponse(BaseModel):
 
     id: uuid.UUID
     tractor_id: uuid.UUID
+    tractor_name: Optional[str] = None
     implement_id: Optional[uuid.UUID]
     operator_id: uuid.UUID
     operator_name: Optional[str] = None
@@ -199,6 +201,7 @@ class SessionSummaryReport(BaseModel):
     ended_at: Optional[datetime]
     duration_minutes: Optional[float]
     area_ha: Optional[float]
+    total_distance_m: Optional[float] = None
     total_cost_inr: Optional[float]
     charge_per_ha_applied: Optional[float]
     cost_note: Optional[str]

@@ -11,6 +11,7 @@ import type { LoginRequest, RegisterRequest, UserResponse } from '../types/auth'
 import { queryClient } from '../hooks/queryClient';
 import * as authService from '../services/authService';
 import { clearSession, loadPersistedSession } from '../services/authStorage';
+import { registerSessionExpiredClear } from '../services/sessionExpired';
 
 type AuthContextValue = {
   user: UserResponse | null;
@@ -46,6 +47,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  /** Clears tokens + cache + user when access token is rejected (no logout API call). */
+  const clearSessionExpiredLocally = useCallback(async () => {
+    await clearSession();
+    queryClient.clear();
+    setUser(null);
+  }, []);
+
+  useEffect(() => {
+    registerSessionExpiredClear(clearSessionExpiredLocally);
+    return () => registerSessionExpiredClear(null);
+  }, [clearSessionExpiredLocally]);
 
   const login = useCallback(async (credentials: LoginRequest) => {
     const data = await authService.login(credentials);

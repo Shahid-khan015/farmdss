@@ -5,6 +5,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -22,8 +23,13 @@ from app.schemas.session import (
     SessionSummaryReport,
 )
 from app.services.report_service import ReportFilters, generate_report
-from app.services.field_area_service import finalize_session_area
-from app.services.operation_cost_service import compute_session_cost
+from app.services.field_area_service import finalize_session_area, parse_gps_points, compute_total_path_distance_m
+from app.services.operation_cost_service import (
+    compute_session_cost,
+    resolve_session_billing,
+    session_billing_differs_from_persisted,
+)
+from app.services.export_service import build_csv_bytes, build_pdf_bytes
 
 router = APIRouter(prefix="/api/v1/reports", tags=["Reports"])
 
@@ -48,6 +54,14 @@ PRESET_TO_FEED = {
     "field_capacity": "field_capacity",
     "vibration_level": "vibration",
 }
+
+
+def _to_utc_opt(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 @router.get("/summary")
@@ -138,12 +152,14 @@ def get_session_summary_report(
         finalize_session_area(session_id, db)
         db.commit()
         db.refresh(session)
-    if session.status == "completed" and (
-        session.charge_per_ha_applied is None or (session.total_cost_inr is None and session.area_ha is not None)
-    ):
-        compute_session_cost(session, db)
-        db.commit()
-        db.refresh(session)
+
+    billing = resolve_session_billing(session, db)
+    if session.status == "completed" and session.area_ha is not None:
+        if session_billing_differs_from_persisted(session, billing):
+            compute_session_cost(session, db)
+            db.commit()
+            db.refresh(session)
+            billing = resolve_session_billing(session, db)
 
     alerts = list(
         db.scalars(
@@ -158,25 +174,28 @@ def get_session_summary_report(
         end_dt = _to_utc(session.ended_at) if session.ended_at is not None else datetime.now(timezone.utc)
         duration_minutes = max(0.0, (end_dt - _to_utc(session.started_at)).total_seconds() / 60.0)
 
-    session_end = session.ended_at or datetime.now(timezone.utc)
+    session_start = _to_utc_opt(session.started_at) or datetime.now(timezone.utc)
+    session_end = _to_utc_opt(session.ended_at) or datetime.now(timezone.utc)
+
+    # Primary query: filter strictly by session_id (most reliable).
+    # Do NOT additionally restrict by device_timestamp here — small device-clock
+    # offsets can put valid readings just outside the session window.
     readings = list(
         db.scalars(
             select(IoTReading)
-            .where(
-                IoTReading.session_id == session_id,
-                IoTReading.device_timestamp >= session.started_at,
-                IoTReading.device_timestamp <= session_end,
-            )
+            .where(IoTReading.session_id == session_id)
             .order_by(IoTReading.device_timestamp.asc())
         ).all()
     )
 
     if not readings:
+        # Fallback: readings ingested before session was active (no session_id set).
+        # Use the time window to scope them — but only as a best-effort fallback.
         readings = list(
             db.scalars(
                 select(IoTReading)
                 .where(
-                    IoTReading.device_timestamp >= session.started_at,
+                    IoTReading.device_timestamp >= session_start,
                     IoTReading.device_timestamp <= session_end,
                 )
                 .order_by(IoTReading.device_timestamp.asc())
@@ -248,6 +267,7 @@ def get_session_summary_report(
 
     alert_items = [
         AlertSummaryItem(
+            id=alert.id,
             feed_key=alert.feed_key,
             alert_type=alert.alert_type,
             alert_status=alert.alert_status,
@@ -259,6 +279,12 @@ def get_session_summary_report(
         )
         for alert in alerts
     ]
+
+    gps_points = parse_gps_points(session_id, db)
+    total_distance_m: Optional[float] = None
+    if gps_points:
+        raw_dist = compute_total_path_distance_m(gps_points)
+        total_distance_m = round(raw_dist, 1)
 
     return SessionSummaryReport(
         session_id=str(session.id),
@@ -272,9 +298,10 @@ def get_session_summary_report(
         ended_at=session.ended_at,
         duration_minutes=duration_minutes,
         area_ha=session.area_ha,
-        total_cost_inr=session.total_cost_inr,
-        charge_per_ha_applied=session.charge_per_ha_applied,
-        cost_note=session.cost_note,
+        total_distance_m=total_distance_m,
+        total_cost_inr=billing.total_cost_inr,
+        charge_per_ha_applied=billing.charge_per_ha_applied,
+        cost_note=billing.cost_note,
         alerts=alert_items,
         field_observations=[
             FieldObservationResponse.model_validate(observation)
@@ -285,4 +312,48 @@ def get_session_summary_report(
         preset_summaries=preset_summaries,
         total_alerts=len(alert_items),
         unacknowledged_alerts=sum(1 for alert in alerts if not alert.acknowledged),
+    )
+
+
+@router.get("/session/{session_id}/export")
+def export_session_report(
+    session_id: UUID,
+    format: str = Query(default="csv", description="Export format: csv or pdf"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Download a session report as CSV or PDF."""
+    if format not in ("csv", "pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="format must be 'csv' or 'pdf'",
+        )
+
+    # Reuse the existing report builder by calling it directly
+    report: SessionSummaryReport = get_session_summary_report(
+        session_id=session_id,
+        db=db,
+        current_user=current_user,
+    )
+
+    safe_id = str(session_id)[:8]
+    if format == "csv":
+        data = build_csv_bytes(report)
+        filename = f"session_{safe_id}.csv"
+        media_type = "text/csv"
+    else:
+        try:
+            data = build_pdf_bytes(report)
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            ) from exc
+        filename = f"session_{safe_id}.pdf"
+        media_type = "application/pdf"
+
+    return StreamingResponse(
+        iter([data]),
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

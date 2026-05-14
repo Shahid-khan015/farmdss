@@ -6,6 +6,9 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+import { OwnerSidebarProvider } from '../contexts/OwnerSidebarContext';
+import { navigationRef } from './navigationRef';
+
 import type {
   AuthStackParamList,
   RootTabParamList,
@@ -73,9 +76,16 @@ function IoTStackNavigator() {
 }
 
 function TractorStackNavigator() {
+  const { user } = useAuth();
+  const isOwner = user?.role === 'owner';
+
   return (
     <TractorStack.Navigator>
-      <TractorStack.Screen name="TractorList" component={TractorListScreen} options={{ title: 'Tractors' }} />
+      <TractorStack.Screen
+        name="TractorList"
+        component={TractorListScreen}
+        options={isOwner ? { headerShown: false } : { title: 'Tractors' }}
+      />
       <TractorStack.Screen name="TractorDetail" component={TractorDetailScreen} options={{ title: 'Tractor Details' }} />
       <TractorStack.Screen name="TractorForm" component={TractorFormScreen} options={{ title: 'Tractor' }} />
       <TractorStack.Screen name="SimulationSetup" component={SimulationSetupScreen} options={{ title: 'New Simulation' }} />
@@ -85,9 +95,16 @@ function TractorStackNavigator() {
 }
 
 function ImplementStackNavigator() {
+  const { user } = useAuth();
+  const isOwner = user?.role === 'owner';
+
   return (
     <ImplementStack.Navigator>
-      <ImplementStack.Screen name="ImplementList" component={ImplementListScreen} options={{ title: 'Implements' }} />
+      <ImplementStack.Screen
+        name="ImplementList"
+        component={ImplementListScreen}
+        options={isOwner ? { headerShown: false } : { title: 'Implements' }}
+      />
       <ImplementStack.Screen name="ImplementDetail" component={ImplementDetailScreen} options={{ title: 'Implement Details' }} />
       <ImplementStack.Screen name="ImplementForm" component={ImplementFormScreen} options={{ title: 'Implement' }} />
       <ImplementStack.Screen name="SimulationSetup" component={SimulationSetupScreen} options={{ title: 'New Simulation' }} />
@@ -241,8 +258,10 @@ function RootNavigator() {
 
 export function AppNavigator() {
   return (
-    <NavigationContainer>
-      <RootNavigator />
+    <NavigationContainer ref={navigationRef}>
+      <OwnerSidebarProvider>
+        <RootNavigator />
+      </OwnerSidebarProvider>
     </NavigationContainer>
   );
 }

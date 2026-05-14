@@ -105,22 +105,15 @@ export function RecommendationCard({
         style={styles.gradient}
       >
         <View style={styles.cardContent}>
-          <View style={styles.header}>
-            <View style={styles.iconWrapper}>
-              <Feather name={statusConfig.icon} size={24} color="#FFFFFF" />
-            </View>
-
-            <View style={styles.headerText}>
-              <View style={styles.statusTitleRow}>
+          <View style={styles.topBar}>
+            <View style={styles.kickerRow}>
+              <View style={styles.kickerBadge}>
                 <Text style={styles.statusEyebrow}>Tractor Load Status</Text>
-                <View style={styles.statusPill}>
-                  <Text style={styles.statusPillText}>{statusConfig.badgeLabel}</Text>
-                </View>
               </View>
-              <Text style={styles.statusTitle}>{loadStatus ?? 'Status Not Specified'}</Text>
-              <Text style={styles.statusMessage}>{statusMessage ?? '-'}</Text>
+              <View style={styles.statusPill}>
+                <Text style={styles.statusPillText}>{statusConfig.badgeLabel}</Text>
+              </View>
             </View>
-
             <Pressable
               onPress={handleDismiss}
               style={({ pressed }) => [
@@ -128,15 +121,29 @@ export function RecommendationCard({
                 pressed && styles.dismissButtonPressed,
               ]}
             >
-              <Feather name="x" size={20} color="#FFFFFF" />
+              <Feather name="x" size={18} color="#FFFFFF" />
             </Pressable>
+          </View>
+
+          <View style={styles.heroRow}>
+            <View style={styles.iconPanel}>
+              <View style={styles.iconWrapper}>
+                <Feather name={statusConfig.icon} size={24} color="#FFFFFF" />
+              </View>
+              <Text style={styles.iconPanelLabel}>Current State</Text>
+            </View>
+
+            <View style={styles.headerText}>
+              <Text style={styles.statusTitle}>{loadStatus ?? 'Status Not Specified'}</Text>
+              <Text style={styles.statusMessage}>{statusMessage ?? 'Review the current tractor loading before the next run.'}</Text>
+            </View>
           </View>
 
           {recommendations ? (
             <View style={styles.recommendationsSection}>
               <View style={styles.recommendationsHeader}>
                 <Feather name="lightbulb" size={16} color="#FFFFFF" />
-                <Text style={styles.recommendationsTitle}>Recommendations</Text>
+                <Text style={styles.recommendationsTitle}>Recommended Action</Text>
               </View>
               <Text style={styles.recommendationsText}>{recommendations}</Text>
             </View>
@@ -157,92 +164,129 @@ const styles = StyleSheet.create({
   },
   cardContent: {
     padding: spacing.lg,
+    gap: spacing.lg,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  iconWrapper: {
-    width: 46,
-    height: 46,
-    borderRadius: borderRadius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-  },
-  headerText: {
-    flex: 1,
-  },
-  statusTitleRow: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
+    gap: spacing.md,
   },
-  statusEyebrow: {
+  kickerRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+  },
+  kickerBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: spacing.md,
+  },
+  iconPanel: {
+    width: 92,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  iconWrapper: {
+    width: 52,
+    height: 52,
+    borderRadius: borderRadius.lg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  iconPanelLabel: {
     ...typography.labelSmall,
     color: 'rgba(255,255,255,0.82)',
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0.8,
+    textAlign: 'center',
+  },
+  headerText: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  statusEyebrow: {
+    ...typography.labelSmall,
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.9,
+    fontWeight: '700',
   },
   statusPill: {
     paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderRadius: borderRadius.full,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.18)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   statusPillText: {
     ...typography.labelSmall,
     color: '#FFFFFF',
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   statusTitle: {
-    ...typography.h5,
+    ...typography.h4,
     color: '#FFFFFF',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
     fontWeight: '700',
+    lineHeight: 30,
   },
   statusMessage: {
     ...typography.body,
-    color: 'rgba(255,255,255,0.92)',
-    lineHeight: 20,
+    color: 'rgba(255,255,255,0.9)',
+    lineHeight: 22,
   },
   dismissButton: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: borderRadius.md,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
   },
   dismissButtonPressed: {
     opacity: 0.7,
   },
   recommendationsSection: {
-    marginTop: spacing.lg,
     paddingTop: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.2)',
+    borderTopColor: 'rgba(255,255,255,0.16)',
   },
   recommendationsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   recommendationsTitle: {
     ...typography.label,
     color: '#FFFFFF',
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   recommendationsText: {
     ...typography.body,
     color: 'rgba(255,255,255,0.92)',
-    lineHeight: 20,
+    lineHeight: 22,
   },
 });

@@ -83,12 +83,15 @@ export function Picker({
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Pressable onPress={() => setShowModal(false)}>
-                <Text style={styles.modalActionText}>Cancel</Text>
-              </Pressable>
+              {/* Left spacer for centering title */}
+              <View style={{ width: 40 }} />
               <Text style={styles.modalTitle}>{label || 'Select'}</Text>
-              <Pressable>
-                <Text style={{ opacity: 0 }}>Done</Text>
+              <Pressable 
+                onPress={() => setShowModal(false)}
+                hitSlop={8}
+                style={{ width: 40, alignItems: 'flex-end', justifyContent: 'center' }}
+              >
+                <Feather name="x" size={24} color={colors.text} />
               </Pressable>
             </View>
 

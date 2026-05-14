@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Text } from 'react-native-paper';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 
 import { Card } from '../../components/common/Card';
@@ -59,6 +60,7 @@ function operationLabel(operationType: string): string {
 
 export function OperatorDashboardScreen() {
   const nav = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const { activeSession } = useActiveSession();
   const { session: activeSessionDetail } = useSessionDetail(activeSession?.id ?? null);
@@ -154,14 +156,33 @@ export function OperatorDashboardScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <DashboardAuthHeader
-          title={`Welcome, ${user?.name?.split(' ')[0] ?? 'Operator'}`}
-          subtitle="Operator"
-          showMenuButton
-          onMenuPress={() => setSidebarVisible(true)}
-        />
+      <View style={[styles.fixedHeaderShell, { paddingTop: insets.top }]}>
+        <View style={styles.headerPanel}>
+          <DashboardAuthHeader
+            title={`Welcome, ${user?.name?.split(' ')[0] ?? 'Operator'}`}
+            subtitle="Operator"
+            showMenuButton
+            onMenuPress={() => setSidebarVisible(true)}
+            containerStyle={styles.dashboardHeaderBlend}
+            menuButtonStyle={styles.dashboardHeaderMenuButton}
+            signOutButtonStyle={styles.dashboardHeaderSignOutButton}
+            titleStyle={styles.dashboardHeaderTitle}
+            subtitleStyle={styles.dashboardHeaderSubtitle}
+            signOutLabelStyle={styles.dashboardHeaderSignOutLabel}
+          />
+        </View>
+      </View>
 
+      <ScrollView
+        contentContainerStyle={[
+          styles.container,
+          {
+            paddingTop: insets.top + 108,
+            paddingBottom: spacing.xxl + insets.bottom,
+          },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <AlertNotificationPopup
           alert={topDashboardAlert}
           subtitle="Operator dashboard"
@@ -282,51 +303,53 @@ export function OperatorDashboardScreen() {
         onRequestClose={() => setSidebarVisible(false)}
       >
         <View style={styles.sidebarOverlay}>
-          <View style={styles.sidebarPanel}>
-            <View style={styles.sidebarContent}>
-              <View style={styles.sidebarHeader}>
-                <Text style={styles.sidebarTitle}>Menu</Text>
-                <Pressable onPress={() => setSidebarVisible(false)} style={styles.sidebarClose}>
-                  <Feather name="x" size={18} color={colors.text} />
-                </Pressable>
-              </View>
+          <SafeAreaView edges={['top', 'bottom', 'left']} style={styles.sidebarSafeArea}>
+            <View style={styles.sidebarPanel}>
+              <View style={styles.sidebarContent}>
+                <View style={styles.sidebarHeader}>
+                  <Text style={styles.sidebarTitle}>Menu</Text>
+                  <Pressable onPress={() => setSidebarVisible(false)} style={styles.sidebarClose}>
+                    <Feather name="x" size={18} color={colors.text} />
+                  </Pressable>
+                </View>
 
-              <View style={styles.sidebarItems}>
+                <View style={styles.sidebarItems}>
+                  <Pressable
+                    style={styles.sidebarItem}
+                    onPress={() => {
+                      setSidebarVisible(false);
+                      nav.navigate('SimulationStackScreen', { screen: 'SimulationHistory' });
+                    }}
+                  >
+                    <Feather name="activity" size={18} color={colors.primary} />
+                    <Text style={styles.sidebarItemLabel}>Simulations</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.sidebarItem}
+                    onPress={() => {
+                      setSidebarVisible(false);
+                      nav.navigate('Reports');
+                    }}
+                  >
+                    <Feather name="bar-chart-2" size={18} color={colors.primary} />
+                    <Text style={styles.sidebarItemLabel}>Reports</Text>
+                  </Pressable>
+                </View>
+
                 <Pressable
-                  style={styles.sidebarItem}
+                  style={styles.sidebarSignOut}
                   onPress={() => {
                     setSidebarVisible(false);
-                    nav.navigate('Reports');
+                    logout();
                   }}
                 >
-                  <Feather name="bar-chart-2" size={18} color={colors.primary} />
-                  <Text style={styles.sidebarItemLabel}>Reports</Text>
-                </Pressable>
-
-                <Pressable
-                  style={styles.sidebarItem}
-                  onPress={() => {
-                    setSidebarVisible(false);
-                    nav.navigate('SimulationStackScreen', { screen: 'SimulationHistory' });
-                  }}
-                >
-                  <Feather name="activity" size={18} color={colors.primary} />
-                  <Text style={styles.sidebarItemLabel}>Simulations</Text>
+                  <Feather name="log-out" size={18} color={colors.danger} />
+                  <Text style={styles.sidebarSignOutText}>Sign out</Text>
                 </Pressable>
               </View>
-
-              <Pressable
-                style={styles.sidebarSignOut}
-                onPress={() => {
-                  setSidebarVisible(false);
-                  logout();
-                }}
-              >
-                <Feather name="log-out" size={18} color={colors.danger} />
-                <Text style={styles.sidebarSignOutText}>Sign out</Text>
-              </Pressable>
             </View>
-          </View>
+          </SafeAreaView>
 
           <Pressable style={styles.sidebarBackdrop} onPress={() => setSidebarVisible(false)} />
         </View>
@@ -337,6 +360,51 @@ export function OperatorDashboardScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
+  fixedHeaderShell: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    elevation: 8,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerPanel: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.background,
+  },
+  dashboardHeaderBlend: {
+    backgroundColor: 'transparent',
+  },
+  dashboardHeaderMenuButton: {
+    borderWidth: 0,
+    borderColor: 'transparent',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 20,
+  },
+  dashboardHeaderSignOutButton: {
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  dashboardHeaderTitle: {
+    ...typography.h4,
+    fontWeight: '700',
+  },
+  dashboardHeaderSubtitle: {
+    color: '#64748B',
+    marginTop: 2,
+  },
+  dashboardHeaderSignOutLabel: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
   container: {
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
@@ -496,15 +564,18 @@ const styles = StyleSheet.create({
   sessionMetaText: { ...typography.bodySmall, color: colors.muted },
   sessionSummaryText: { ...typography.bodySmall, color: colors.text, fontWeight: '600', marginTop: spacing.xs },
   sidebarOverlay: { flex: 1, flexDirection: 'row', backgroundColor: 'rgba(15, 23, 42, 0.22)' },
-  sidebarPanel: {
+  sidebarSafeArea: {
     width: 280,
     maxWidth: '82%',
     backgroundColor: '#FFFFFF',
+    borderTopRightRadius: borderRadius.lg,
+    borderBottomRightRadius: borderRadius.lg,
+  },
+  sidebarPanel: {
+    flex: 1,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
     paddingBottom: spacing.lg,
-    borderTopRightRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
   },
   sidebarContent: {
     flex: 1,

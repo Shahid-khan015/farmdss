@@ -11,17 +11,68 @@ import {
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 
 import { Button } from '../components/common/Button';
-import { AlertNotificationPopup } from '../components/common/AlertNotificationPopup';
 import { Card } from '../components/common/Card';
+import { OwnerScreenMenuButton } from '../components/navigation/OwnerScreenMenuButton';
 import { useAuth } from '../contexts/AuthContext';
 import { colors } from '../constants/colors';
 import { useDashboardStats } from '../hooks/useDashboardStats';
 import { useActiveSession, useSessions } from '../hooks/useSession';
 import { fetchAlerts, type AlertResponse } from '../services/AlertService';
 import { borderRadius, spacing, typography } from '../theme';
+
+/** `_tick` forces re-render while sessions are active (live clock). */
+function formatRunningDuration(startedAt: string, _tick?: number): string {
+  void _tick;
+  const start = new Date(startedAt).getTime();
+  const now = Date.now();
+  let sec = Math.floor((now - start) / 1000);
+  if (Number.isNaN(sec) || sec < 0) sec = 0;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${h}h ${m}m ${s}s`;
+}
+
+function operationBadgeColors(operationType: string): { bg: string; text: string } {
+  switch (operationType) {
+    case 'Tillage':
+      return { bg: '#FFEDD5', text: '#C2410C' };
+    case 'Sowing':
+      return { bg: '#DCFCE7', text: '#166534' };
+    case 'Spraying':
+      return { bg: '#E0F2FE', text: '#0369A1' };
+    case 'Weeding':
+      return { bg: '#FEF9C3', text: '#854D0E' };
+    case 'Harvesting':
+      return { bg: '#F3E8FF', text: '#6B21A8' };
+    default:
+      return { bg: '#F3F4F6', text: '#374151' };
+  }
+}
+
+function formatAlertClock(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
+
+function alertLevelLabel(alertStatus: string): string {
+  if (alertStatus === 'critical') return 'Critical';
+  if (alertStatus === 'warning') return 'Warning';
+  return alertStatus.charAt(0).toUpperCase() + alertStatus.slice(1);
+}
+
+function alertDotColor(alert: AlertResponse): string {
+  const st = (alert.alert_status || '').toLowerCase();
+  if (st === 'critical' || alert.severity_color === 'red') return '#DC2626';
+  return '#EA580C';
+}
 
 interface StatCard {
   id: string;
@@ -33,6 +84,7 @@ interface StatCard {
 
 export function HomeScreen() {
   const nav = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const currentUser = user;
   const isOwner = user?.role === 'owner';
@@ -43,6 +95,7 @@ export function HomeScreen() {
   const useSimulationStack = useSidebarNav || isOperator || isFarmer;
   const { stats, isLoading, error } = useDashboardStats();
   const { sessions: activeSessions } = useActiveSession();
+  const [durationTick, setDurationTick] = useState(0);
   const sessionListFilters = useMemo(
     () => (isOwner ? { limit: 100, offset: 0 } : {}),
     [isOwner],
@@ -50,7 +103,6 @@ export function HomeScreen() {
   const { sessions: allSessions } = useSessions(sessionListFilters);
   const [recentAlerts, setRecentAlerts] = useState<AlertResponse[]>([]);
   const [sidebarVisible, setSidebarVisible] = useState(false);
-  const [dismissedPopupAlertId, setDismissedPopupAlertId] = useState<string | null>(null);
   const { width } = useWindowDimensions();
   const isCompact = width < 360;
   const gridGap = spacing.md;
@@ -76,7 +128,7 @@ export function HomeScreen() {
   }, [fadeAnim, translateAnim.y]);
 
   useEffect(() => {
-    if (!isOwner) return;
+    if (!user) return;
     let mounted = true;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -84,7 +136,7 @@ export function HomeScreen() {
       try {
         const { items } = await fetchAlerts({
           acknowledged: false,
-          limit: 3,
+          limit: 10,
           offset: 0,
         });
         if (!mounted) return;
@@ -103,31 +155,25 @@ export function HomeScreen() {
       mounted = false;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [isOwner]);
-
-  const thisMonth = useMemo(() => {
-    if (!isOwner) return { area: 0, total: 0 };
-    const now = new Date();
-    const month = now.getMonth();
-    const year = now.getFullYear();
-    const monthSessions = allSessions.filter((session) => {
-      const started = new Date(session.started_at);
-      return started.getMonth() === month && started.getFullYear() === year;
-    });
-    const area = monthSessions.reduce((sum, session) => sum + (session.area_ha ?? 0), 0);
-    return { area, total: monthSessions.length };
-  }, [allSessions, isOwner]);
-  const topOwnerAlert = useMemo(
-    () =>
-      recentAlerts.find((alert) => !alert.acknowledged && alert.id !== dismissedPopupAlertId) ?? null,
-    [dismissedPopupAlertId, recentAlerts],
-  );
+  }, [user]);
 
   useEffect(() => {
-    if (recentAlerts.length === 0) {
-      setDismissedPopupAlertId(null);
+    if (activeSessions.length === 0) return;
+    const id = setInterval(() => setDurationTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [activeSessions.length]);
+
+  const displayedAlerts = useMemo(() => recentAlerts.slice(0, 3), [recentAlerts]);
+  const alertHeaderCounts = useMemo(() => {
+    let warnings = 0;
+    let critical = 0;
+    for (const a of displayedAlerts) {
+      const st = (a.alert_status || '').toLowerCase();
+      if (st === 'critical') critical += 1;
+      else if (st === 'warning') warnings += 1;
     }
-  }, [recentAlerts]);
+    return { warnings, critical };
+  }, [displayedAlerts]);
 
   const statCards: StatCard[] = stats
     ? [
@@ -162,29 +208,17 @@ export function HomeScreen() {
       ]
     : [];
 
-  const sidebarItems = [
+  /** Researcher-only sidebar (owner uses global OwnerSidebarProvider). */
+  const researcherSidebarItems = [
     {
-      id: 'reports',
-      label: 'Reports',
-      icon: 'bar-chart-2',
-      onPress: () => nav.navigate('Reports'),
+      id: 'simulations',
+      label: 'Simulations',
+      icon: 'activity',
+      onPress: () =>
+        useSimulationStack
+          ? nav.navigate('SimulationStackScreen')
+          : nav.navigate('SimulationsTab', { screen: 'SimulationHistory' }),
     },
-    ...(isOwner
-      ? [
-          {
-            id: 'configuration',
-            label: 'Configuration',
-            icon: 'sliders',
-            onPress: () => nav.navigate('Configuration'),
-          },
-          {
-            id: 'charges',
-            label: 'Charges',
-            icon: 'dollar-sign',
-            onPress: () => nav.navigate('OperationCharges'),
-          },
-        ]
-      : []),
     {
       id: 'iot',
       label: 'IoT Dashboard',
@@ -195,31 +229,30 @@ export function HomeScreen() {
           : nav.navigate('IoTTab', { screen: 'IoTDashboard' }),
     },
     {
-      id: 'simulations',
-      label: 'Simulations',
-      icon: 'activity',
-      onPress: () =>
-        useSimulationStack
-          ? nav.navigate('SimulationStackScreen')
-          : nav.navigate('SimulationsTab', { screen: 'SimulationHistory' }),
+      id: 'reports',
+      label: 'Reports',
+      icon: 'bar-chart-2',
+      onPress: () => nav.navigate('Reports'),
     },
   ];
 
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        <Animated.View
-          style={[
-            styles.headerSection,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: translateAnim.y }],
-            },
-          ]}
-        >
+    <SafeAreaView edges={['bottom']} style={styles.screen}>
+      <Animated.View
+        style={[
+          styles.headerStack,
+          { paddingTop: insets.top },
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: translateAnim.y }],
+          },
+        ]}
+      >
+        <View style={styles.headerSection}>
           <View style={styles.headerTitleRow}>
             <View style={styles.headerLeft}>
-              {useSidebarNav ? (
+              {isOwner ? <OwnerScreenMenuButton variant="home" /> : null}
+              {isResearcher ? (
                 <Pressable
                   onPress={() => setSidebarVisible(true)}
                   accessibilityRole="button"
@@ -231,7 +264,9 @@ export function HomeScreen() {
               ) : null}
               <View style={styles.headerTitles}>
                 <Text style={styles.headerTitle}>Dashboard</Text>
-                <Text style={styles.headerSubtitle}>Tractor Performance DSS</Text>
+                <Text style={styles.headerSubtitle} numberOfLines={1}>
+                  Tractor Performance DSS
+                </Text>
               </View>
             </View>
 
@@ -246,16 +281,19 @@ export function HomeScreen() {
               </Pressable>
             ) : null}
           </View>
-        </Animated.View>
+        </View>
+      </Animated.View>
 
-        {isOwner ? (
-          <AlertNotificationPopup
-            alert={topOwnerAlert}
-            subtitle="Owner dashboard"
-            onClose={() => setDismissedPopupAlertId(topOwnerAlert?.id ?? null)}
-          />
-        ) : null}
-
+      <ScrollView
+        style={styles.mainScroll}
+        contentContainerStyle={[
+          styles.scrollContainer,
+          {
+            paddingTop: insets.top + 96,
+          },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         {!useSidebarNav ? (
           <Animated.View
             style={[
@@ -357,6 +395,118 @@ export function HomeScreen() {
           </Card>
         ) : null}
 
+        {user ? (
+          <Animated.View
+            style={[
+              styles.dashboardLiveSection,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: translateAnim.y }],
+              },
+            ]}
+          >
+            <Text style={styles.dashboardSectionHeading}>ACTIVE SESSIONS RIGHT NOW</Text>
+            {activeSessions.length === 0 ? (
+              <Text style={styles.dashboardEmptyText}>No sessions running right now.</Text>
+            ) : (
+              activeSessions.map((session) => {
+                const badge = operationBadgeColors(session.operation_type);
+                const area = session.area_ha ?? 0;
+                const unk =
+                  typeof session.unacknowledged_alerts === 'number'
+                    ? session.unacknowledged_alerts
+                    : session.alerts_count ?? 0;
+                const machine = session.tractor_name?.trim() || 'Tractor';
+                const operator = session.operator_name?.trim() || 'Operator';
+                return (
+                  <Card key={session.id} variant="elevated" spacing="comfortable" style={styles.activeSessionCard}>
+                    <View style={styles.activeSessionTopRow}>
+                      <View style={[styles.operationBadge, { backgroundColor: badge.bg }]}>
+                        <Text style={[styles.operationBadgeText, { color: badge.text }]}>
+                          {session.operation_type}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.activeSessionTitleRow}>
+                      <Text style={styles.activeSessionMachine}>{machine}</Text>
+                      <Text style={styles.activeSessionOperator}>
+                        {' · '}
+                        {operator}
+                      </Text>
+                    </Text>
+                    <View style={styles.activeSessionMidRow}>
+                      <Text style={styles.activeSessionDuration}>
+                        {formatRunningDuration(session.started_at, durationTick)}
+                      </Text>
+                      <Text style={styles.activeSessionMetaDot}> · </Text>
+                      <Text style={styles.activeSessionArea}>
+                        {area.toFixed(2)} ha covered
+                      </Text>
+                    </View>
+                    {unk > 0 ? (
+                      <View style={styles.activeSessionAlertRow}>
+                        <Feather name="alert-triangle" size={16} color="#EA580C" />
+                        <Text style={styles.activeSessionAlertText}>
+                          {unk} alert{unk === 1 ? '' : 's'}
+                        </Text>
+                      </View>
+                    ) : null}
+                    <Pressable
+                      onPress={() => nav.navigate('ActiveSession', { sessionId: session.id })}
+                      style={styles.viewLiveRow}
+                      accessibilityRole="button"
+                      accessibilityLabel="View live session"
+                    >
+                      <Text style={styles.viewLiveText}>View Live</Text>
+                      <Feather name="arrow-right" size={18} color="#15803D" />
+                    </Pressable>
+                  </Card>
+                );
+              })
+            )}
+
+            <View style={styles.recentAlertsHeader}>
+              <Text style={[styles.dashboardSectionHeading, styles.recentAlertsHeadingShrink]}>
+                RECENT ALERTS
+              </Text>
+              {displayedAlerts.length > 0 ? (
+                <View style={styles.recentAlertsHeaderCounts}>
+                  {alertHeaderCounts.warnings > 0 ? (
+                    <Text style={styles.recentAlertsWarnCount}>
+                      {alertHeaderCounts.warnings} warning{alertHeaderCounts.warnings === 1 ? '' : 's'}
+                    </Text>
+                  ) : null}
+                  {alertHeaderCounts.warnings > 0 && alertHeaderCounts.critical > 0 ? (
+                    <Text style={styles.recentAlertsCountSep}> </Text>
+                  ) : null}
+                  {alertHeaderCounts.critical > 0 ? (
+                    <Text style={styles.recentAlertsCritCount}>
+                      {alertHeaderCounts.critical} critical
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+            {displayedAlerts.length === 0 ? (
+              <Text style={styles.dashboardEmptyText}>No unacknowledged alerts.</Text>
+            ) : (
+              displayedAlerts.map((alert) => (
+                <Card key={alert.id} variant="elevated" spacing="comfortable" style={styles.alertListCard}>
+                  <View style={styles.alertListRow}>
+                    <View style={[styles.alertDot, { backgroundColor: alertDotColor(alert) }]} />
+                    <View style={styles.alertListBody}>
+                      <Text style={styles.alertListMessage}>{alert.message}</Text>
+                      <Text style={styles.alertListMeta}>
+                        {formatAlertClock(alert.created_at)} · {alertLevelLabel(alert.alert_status)}
+                      </Text>
+                    </View>
+                  </View>
+                </Card>
+              ))
+            )}
+          </Animated.View>
+        ) : null}
+
         <Animated.View
           style={[
             styles.actionsSection,
@@ -426,56 +576,6 @@ export function HomeScreen() {
             </View>
           </Card>
 
-          {isOwner ? (
-            <>
-              <Card
-                variant="elevated"
-                spacing="default"
-                pressable
-                onPress={() => {
-                  const first = activeSessions[0];
-                  if (first) nav.navigate('ActiveSession', { sessionId: first.id });
-                  else nav.navigate('Sessions');
-                }}
-                accessibilityLabel="Active sessions"
-              >
-                <View style={styles.actionItem}>
-                  <View style={[styles.actionIconWrapper, { backgroundColor: '#4CAF5020' }]}>
-                    <Feather name="activity" size={24} color={colors.primary} />
-                  </View>
-                  <View style={styles.actionContent}>
-                    <Text style={styles.actionTitle}>
-                      Active operations{activeSessions.length ? ` (${activeSessions.length})` : ''}
-                    </Text>
-                    <Text style={styles.actionDesc}>
-                      {activeSessions.length ? 'Open the latest live session' : 'View session history'}
-                    </Text>
-                  </View>
-                </View>
-              </Card>
-
-              <Card
-                variant="elevated"
-                spacing="default"
-                pressable
-                onPress={() => nav.navigate('Sessions')}
-                accessibilityLabel="This month summary"
-              >
-                <View style={styles.actionItem}>
-                  <View style={[styles.actionIconWrapper, { backgroundColor: '#79554820' }]}>
-                    <Feather name="calendar" size={24} color={colors.secondary} />
-                  </View>
-                  <View style={styles.actionContent}>
-                    <Text style={styles.actionTitle}>This month</Text>
-                    <Text style={styles.actionDesc}>
-                      {thisMonth.area.toFixed(2)} ha · {thisMonth.total} sessions
-                      {recentAlerts[0] ? ` · Latest alert: ${recentAlerts[0].feed_key}` : ''}
-                    </Text>
-                  </View>
-                </View>
-              </Card>
-            </>
-          ) : null}
         </Animated.View>
 
         {currentUser?.role === 'operator' ? (
@@ -490,59 +590,64 @@ export function HomeScreen() {
         ) : null}
       </ScrollView>
 
-      <Modal
-        visible={sidebarVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSidebarVisible(false)}
-      >
-        <View style={styles.sidebarOverlay}>
-          <View style={styles.sidebar}>
-            <View style={styles.sidebarHeader}>
-              <View>
-                <Text style={styles.sidebarTitle}>Navigation</Text>
-                <Text style={styles.sidebarSubtitle}>
-                  {isOwner ? 'Owner tools' : 'Researcher tools'}
-                </Text>
-              </View>
-              <Pressable onPress={() => setSidebarVisible(false)} style={styles.sidebarClose}>
-                <Feather name="x" size={18} color={colors.text} />
-              </Pressable>
-            </View>
+      {isResearcher ? (
+        <Modal
+          visible={sidebarVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSidebarVisible(false)}
+        >
+          <View style={styles.sidebarOverlay}>
+            <SafeAreaView
+              edges={['top', 'bottom', 'left']}
+              style={styles.sidebarSafeArea}
+            >
+              <View style={styles.sidebar}>
+                <View style={styles.sidebarHeader}>
+                  <View>
+                    <Text style={styles.sidebarTitle}>Navigation</Text>
+                    <Text style={styles.sidebarSubtitle}>Researcher tools</Text>
+                  </View>
+                  <Pressable onPress={() => setSidebarVisible(false)} style={styles.sidebarClose}>
+                    <Feather name="x" size={18} color={colors.text} />
+                  </Pressable>
+                </View>
 
-            <View style={styles.sidebarItems}>
-              {sidebarItems.map((item) => (
+                <View style={styles.sidebarItems}>
+                  {researcherSidebarItems.map((item) => (
+                    <Pressable
+                      key={item.id}
+                      style={styles.sidebarItem}
+                      onPress={() => {
+                        setSidebarVisible(false);
+                        item.onPress();
+                      }}
+                    >
+                      <View style={styles.sidebarIcon}>
+                        <Feather name={item.icon as any} size={18} color={colors.primary} />
+                      </View>
+                      <Text style={styles.sidebarItemText}>{item.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+
                 <Pressable
-                  key={item.id}
-                  style={styles.sidebarItem}
+                  style={styles.sidebarSignOut}
                   onPress={() => {
                     setSidebarVisible(false);
-                    item.onPress();
+                    logout();
                   }}
                 >
-                  <View style={styles.sidebarIcon}>
-                    <Feather name={item.icon as any} size={18} color={colors.primary} />
-                  </View>
-                  <Text style={styles.sidebarItemText}>{item.label}</Text>
+                  <Feather name="log-out" size={18} color={colors.danger} />
+                  <Text style={styles.sidebarSignOutText}>Sign out</Text>
                 </Pressable>
-              ))}
-            </View>
-
-            <Pressable
-              style={styles.sidebarSignOut}
-              onPress={() => {
-                setSidebarVisible(false);
-                logout();
-              }}
-            >
-              <Feather name="log-out" size={18} color={colors.danger} />
-              <Text style={styles.sidebarSignOutText}>Sign out</Text>
-            </Pressable>
+              </View>
+            </SafeAreaView>
+            <Pressable style={styles.sidebarBackdrop} onPress={() => setSidebarVisible(false)} />
           </View>
-          <Pressable style={styles.sidebarBackdrop} onPress={() => setSidebarVisible(false)} />
-        </View>
-      </Modal>
-    </View>
+        </Modal>
+      ) : null}
+    </SafeAreaView>
   );
 }
 
@@ -552,13 +657,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   scrollContainer: {
-    paddingTop: spacing.lg,
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.xxl,
     backgroundColor: colors.background,
   },
+  /** Header in document flow so scroll content never sits under it (avoids overlap with stat cards). */
+  headerStack: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    elevation: 8,
+    backgroundColor: colors.background,
+  },
+  mainScroll: {
+    flex: 1,
+  },
   headerSection: {
-    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    backgroundColor: colors.background,
   },
   headerTitleRow: {
     flexDirection: 'row',
@@ -570,7 +690,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
     minWidth: 0,
   },
   headerTitles: {
@@ -578,30 +698,37 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   signOutButton: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
+    minHeight: 46,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+    backgroundColor: '#16A34A',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   signOutText: {
-    ...typography.labelSmall,
-    color: colors.primary,
+    ...typography.label,
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   menuButton: {
     width: 40,
     height: 40,
-    borderRadius: borderRadius.md,
-    backgroundColor: `${colors.primary}12`,
+    borderRadius: 20,
+    backgroundColor: '#DCFCE7',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    ...typography.h2,
+    ...typography.h4,
     color: colors.text,
-    marginBottom: spacing.xs,
+    fontWeight: '700',
+    marginBottom: 0,
   },
   headerSubtitle: {
-    ...typography.body,
-    color: colors.muted,
+    ...typography.bodySmall,
+    color: '#64748B',
+    marginTop: 2,
   },
   runSimButtonWrapper: {
     marginBottom: spacing.xl,
@@ -627,6 +754,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.md,
+    marginTop: spacing.sm,
     marginBottom: spacing.xxl,
   },
   statCard: {
@@ -674,6 +802,156 @@ const styles = StyleSheet.create({
   },
   errorCard: {
     marginBottom: spacing.lg,
+  },
+  dashboardLiveSection: {
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  dashboardSectionHeading: {
+    ...typography.labelSmall,
+    color: colors.muted,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    marginBottom: spacing.xs,
+  },
+  dashboardEmptyText: {
+    ...typography.body,
+    color: colors.muted,
+    marginBottom: spacing.sm,
+  },
+  activeSessionCard: {
+    marginBottom: spacing.sm,
+  },
+  activeSessionTopRow: {
+    marginBottom: spacing.sm,
+  },
+  operationBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  operationBadgeText: {
+    ...typography.labelSmall,
+    fontWeight: '700',
+  },
+  activeSessionTitleRow: {
+    marginBottom: spacing.sm,
+  },
+  activeSessionMachine: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  activeSessionOperator: {
+    ...typography.body,
+    fontWeight: '400',
+    color: colors.muted,
+  },
+  activeSessionMidRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  activeSessionDuration: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  activeSessionMetaDot: {
+    ...typography.body,
+    color: colors.muted,
+  },
+  activeSessionArea: {
+    ...typography.body,
+    color: colors.muted,
+  },
+  activeSessionAlertRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  activeSessionAlertText: {
+    ...typography.label,
+    color: '#EA580C',
+    fontWeight: '600',
+  },
+  viewLiveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+  },
+  viewLiveText: {
+    ...typography.label,
+    color: '#15803D',
+    fontWeight: '700',
+  },
+  recentAlertsHeadingShrink: {
+    flex: 1,
+    marginBottom: 0,
+    minWidth: 0,
+  },
+  recentAlertsHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  recentAlertsHeaderCounts: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: spacing.xs,
+    flexShrink: 0,
+    maxWidth: '55%',
+  },
+  recentAlertsWarnCount: {
+    ...typography.labelSmall,
+    color: '#EA580C',
+    fontWeight: '600',
+  },
+  recentAlertsCritCount: {
+    ...typography.labelSmall,
+    color: '#DC2626',
+    fontWeight: '700',
+  },
+  recentAlertsCountSep: {
+    ...typography.labelSmall,
+    color: colors.muted,
+  },
+  alertListCard: {
+    marginBottom: spacing.sm,
+  },
+  alertListRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  alertDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 6,
+  },
+  alertListBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  alertListMessage: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  alertListMeta: {
+    ...typography.bodySmall,
+    color: colors.muted,
+    marginTop: spacing.xs,
   },
   actionsSection: {
     gap: spacing.md,
@@ -725,11 +1003,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: 'rgba(15, 23, 42, 0.28)',
   },
-  sidebar: {
+  sidebarSafeArea: {
     width: 280,
     backgroundColor: '#FFFFFF',
-    paddingTop: spacing.xl,
+  },
+  sidebar: {
+    flex: 1,
     paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
     paddingBottom: spacing.lg,
     justifyContent: 'space-between',
   },

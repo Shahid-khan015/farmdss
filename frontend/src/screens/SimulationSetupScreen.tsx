@@ -691,6 +691,7 @@ export function SimulationSetupScreen() {
           variant="outline"
           size="lg"
           fullWidth
+          style={styles.cancelButton}
           disabled={run.isPending}
           onPress={() => nav.goBack()}
         >
@@ -1229,6 +1230,12 @@ const styles = StyleSheet.create({
   footer: {
     gap: spacing.md,
     marginTop: spacing.xl,
+  },
+  cancelButton: {
+    minHeight: 44,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
   },
   emptyText: {
     ...typography.body,

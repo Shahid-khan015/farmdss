@@ -3,6 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text, Switch } from 'react-native-paper';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../components/common/Button';
 import { Card } from '../components/common/Card';
@@ -44,6 +45,7 @@ function sourcePillLabel(isLibrary: boolean): string {
 
 export function SessionSetupScreen() {
   const nav = useNavigation<any>();
+  const insets = useSafeAreaInsets();
 
   const tractorsQ = useTractors({ limit: 100, offset: 0 });
   const implementsQ = useImplements({ limit: 100, offset: 0 });
@@ -112,15 +114,22 @@ export function SessionSetupScreen() {
       : 'Width not set';
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <Pressable onPress={() => nav.goBack()} style={styles.backButton}>
-          <Feather name="arrow-left" size={20} color={colors.text} />
-        </Pressable>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Start Operation</Text>
+    <View style={styles.screen}>
+      <View style={[styles.fixedHeaderShell, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <Pressable onPress={() => nav.goBack()} style={styles.backButton}>
+            <Feather name="arrow-left" size={20} color={colors.text} />
+          </Pressable>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Start Operation</Text>
+          </View>
         </View>
       </View>
+
+      <ScrollView
+        contentContainerStyle={[styles.scrollContainer, { paddingTop: insets.top + 88 }]}
+        showsVerticalScrollIndicator={false}
+      >
 
       <Card variant="default" spacing="default">
         <Text style={styles.fieldLabel}>Select Tractor</Text>
@@ -377,22 +386,40 @@ export function SessionSetupScreen() {
           </View>
         </View>
       </Modal>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   scrollContainer: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
     paddingBottom: spacing.xxl,
     backgroundColor: colors.background,
     gap: spacing.lg,
+  },
+  fixedHeaderShell: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    elevation: 6,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
   backButton: {
     width: 44,

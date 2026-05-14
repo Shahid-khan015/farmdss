@@ -229,22 +229,33 @@ export function FarmerDashboardScreen() {
                   style={styles.sidebarItem}
                   onPress={() => {
                     setSidebarVisible(false);
-                    nav.navigate('Reports');
+                    nav.navigate('SimulationStackScreen', { screen: 'SimulationHistory' });
                   }}
                 >
-                  <Feather name="bar-chart-2" size={18} color={colors.primary} />
-                  <Text style={styles.sidebarItemLabel}>Reports</Text>
+                  <Feather name="activity" size={18} color={colors.primary} />
+                  <Text style={styles.sidebarItemLabel}>Simulations</Text>
                 </Pressable>
 
                 <Pressable
                   style={styles.sidebarItem}
                   onPress={() => {
                     setSidebarVisible(false);
-                    nav.navigate('SimulationStackScreen', { screen: 'SimulationHistory' });
+                    nav.navigate('IoTTab', { screen: 'IoTDashboard' });
                   }}
                 >
-                  <Feather name="activity" size={18} color={colors.primary} />
-                  <Text style={styles.sidebarItemLabel}>Simulations</Text>
+                  <Feather name="radio" size={18} color={colors.primary} />
+                  <Text style={styles.sidebarItemLabel}>IoT Dashboard</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.sidebarItem}
+                  onPress={() => {
+                    setSidebarVisible(false);
+                    nav.navigate('Reports');
+                  }}
+                >
+                  <Feather name="bar-chart-2" size={18} color={colors.primary} />
+                  <Text style={styles.sidebarItemLabel}>Reports</Text>
                 </Pressable>
               </View>
 

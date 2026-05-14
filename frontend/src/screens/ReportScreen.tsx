@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -12,6 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import {
   AlertTriangle,
   Calendar,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -25,10 +27,10 @@ import {
 
 import { Button } from '../components/common/Button';
 import { Card } from '../components/common/Card';
-import { Input } from '../components/common/Input';
 import { useAuth } from '../contexts/AuthContext';
 import { colors } from '../constants/colors';
 import { getReportSummary, type ReportSummary } from '../services/ReportService';
+import { downloadSessionExport } from '../services/SessionService';
 import { borderRadius, spacing, typography } from '../theme';
 
 const OPERATIONS = [
@@ -141,6 +143,52 @@ function isSameDay(a: Date | null, b: Date | null): boolean {
   );
 }
 
+type AmPm = 'AM' | 'PM';
+
+const HOURS_12 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+/** 00–60 inclusive (60 rolls to next hour on apply). */
+const MINUTES_0_60 = Array.from({ length: 61 }, (_, i) => i);
+
+function parseHHMM24(value: string): { h: number; m: number } {
+  const [a, b = '0'] = value.trim().split(':');
+  const h = Number.parseInt(a, 10);
+  const m = Number.parseInt(b, 10);
+  const hh = Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : 0;
+  const mm = Number.isFinite(m) ? Math.min(60, Math.max(0, m)) : 0;
+  return { h: hh, m: mm };
+}
+
+function to12hParts(h24: number, m: number): { hour12: number; minute: number; amPm: AmPm } {
+  const amPm: AmPm = h24 < 12 ? 'AM' : 'PM';
+  let hour12 = h24 % 12;
+  if (hour12 === 0) hour12 = 12;
+  return { hour12, minute: m, amPm };
+}
+
+/** 24h `HH:MM` for API (backend expects same as before). */
+function from12hTo24(hour12: number, minute: number, amPm: AmPm): string {
+  let h24: number;
+  if (amPm === 'AM') {
+    h24 = hour12 === 12 ? 0 : hour12;
+  } else {
+    h24 = hour12 === 12 ? 12 : hour12 + 12;
+  }
+  let m = minute;
+  if (m === 60) {
+    m = 0;
+    h24 = (h24 + 1) % 24;
+  } else if (m > 60) {
+    m = 59;
+  }
+  return `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function format12hButtonLabel(hhmm24: string): string {
+  const { h, m } = parseHHMM24(hhmm24);
+  const { hour12, minute, amPm } = to12hParts(h, m);
+  return `${String(hour12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${amPm}`;
+}
+
 type SessionItem = ReportSummary['sessions'][number];
 
 export function ReportScreen() {
@@ -159,8 +207,49 @@ export function ReportScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ReportSummary | null>(null);
+  const [exportingSessionId, setExportingSessionId] = useState<string | null>(null);
   const [calendarField, setCalendarField] = useState<'start' | 'end' | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => parseYmd(startDate) ?? today);
+  const [timePickerField, setTimePickerField] = useState<'start' | 'end' | null>(null);
+  const [pickerHour12, setPickerHour12] = useState(6);
+  const [pickerMinute, setPickerMinute] = useState(0);
+  const [pickerAmPm, setPickerAmPm] = useState<AmPm>('AM');
+
+  const handleExportSession = (sessionId: string) => {
+    Alert.alert(
+      'Export Session Report',
+      'Choose export format:',
+      [
+        {
+          text: 'Export CSV',
+          onPress: async () => {
+            setExportingSessionId(sessionId);
+            try {
+              await downloadSessionExport(sessionId, 'csv');
+            } catch (e: any) {
+              Alert.alert('Export Failed', e?.message ?? 'Could not export CSV');
+            } finally {
+              setExportingSessionId(null);
+            }
+          },
+        },
+        {
+          text: 'Export PDF',
+          onPress: async () => {
+            setExportingSessionId(sessionId);
+            try {
+              await downloadSessionExport(sessionId, 'pdf');
+            } catch (e: any) {
+              Alert.alert('Export Failed', e?.message ?? 'Could not export PDF');
+            } finally {
+              setExportingSessionId(null);
+            }
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  };
 
   const sessionsByDate = useMemo(() => {
     const grouped: Record<string, SessionItem[]> = {};
@@ -255,6 +344,27 @@ export function ReportScreen() {
     closeCalendar();
   };
 
+  const openTimePicker = (field: 'start' | 'end') => {
+    const raw = field === 'start' ? startTime : endTime;
+    const { h, m } = parseHHMM24(raw);
+    const p = to12hParts(h, m);
+    setPickerHour12(p.hour12);
+    setPickerMinute(p.minute);
+    setPickerAmPm(p.amPm);
+    setTimePickerField(field);
+  };
+
+  const closeTimePicker = () => {
+    setTimePickerField(null);
+  };
+
+  const applyTimePicker = () => {
+    const hhmm = from12hTo24(pickerHour12, pickerMinute, pickerAmPm);
+    if (timePickerField === 'start') setStartTime(hhmm);
+    if (timePickerField === 'end') setEndTime(hhmm);
+    closeTimePicker();
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       <Text style={styles.screenTitle}>Reports</Text>
@@ -288,11 +398,27 @@ export function ReportScreen() {
         <View style={styles.dateGrid}>
           <View style={styles.inputCell}>
             <Text style={styles.label}>Start Time</Text>
-            <Input value={startTime} onChangeText={setStartTime} placeholder="HH:MM" />
+            <Pressable
+              style={styles.timeField}
+              onPress={() => openTimePicker('start')}
+              accessibilityRole="button"
+              accessibilityLabel="Choose start time"
+            >
+              <Text style={styles.timeFieldText}>{format12hButtonLabel(startTime)}</Text>
+              <ChevronDown size={16} color={colors.primary} />
+            </Pressable>
           </View>
           <View style={styles.inputCell}>
             <Text style={styles.label}>End Time</Text>
-            <Input value={endTime} onChangeText={setEndTime} placeholder="HH:MM" />
+            <Pressable
+              style={styles.timeField}
+              onPress={() => openTimePicker('end')}
+              accessibilityRole="button"
+              accessibilityLabel="Choose end time"
+            >
+              <Text style={styles.timeFieldText}>{format12hButtonLabel(endTime)}</Text>
+              <ChevronDown size={16} color={colors.primary} />
+            </Pressable>
           </View>
         </View>
 
@@ -389,20 +515,30 @@ export function ReportScreen() {
               <Text style={styles.label}>Sessions</Text>
               <View style={styles.sessionList}>
                 {report.sessions.map((session) => (
-                  <Pressable
-                    key={session.id}
-                    style={styles.sessionCard}
-                    onPress={() => nav.navigate('SessionSummary', { sessionId: session.id })}
-                  >
-                    <Text style={styles.sessionMain}>{fmtDateTime(session.started_at)}</Text>
-                    <Text style={styles.sessionOp}>{session.operation_type}</Text>
-                    <Text style={styles.sessionMeta}>
-                      {fmtArea(session.area_ha)} · {session.operator_name}
-                    </Text>
-                    <Text style={styles.sessionMeta}>
-                      Charges: {fmtCurrency(session.wage_total)}
-                    </Text>
-                  </Pressable>
+                  <View key={session.id} style={styles.sessionCardRow}>
+                    <Pressable
+                      style={styles.sessionCardMain}
+                      onPress={() => nav.navigate('SessionSummary', { sessionId: session.id })}
+                    >
+                      <Text style={styles.sessionMain}>{fmtDateTime(session.started_at)}</Text>
+                      <Text style={styles.sessionOp}>{session.operation_type}</Text>
+                      <Text style={styles.sessionMeta}>
+                        {fmtArea(session.area_ha)} · {session.operator_name}
+                      </Text>
+                      <Text style={styles.sessionMeta}>
+                        Charges: {fmtCurrency(session.total_cost_inr ?? session.wage_total)}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.sessionDownloadBtn}
+                      onPress={() => handleExportSession(session.id)}
+                      accessibilityLabel="Download session report"
+                    >
+                      {exportingSessionId === session.id
+                        ? <ActivityIndicator size="small" color={colors.primary} />
+                        : <Download size={16} color={colors.primary} />}
+                    </Pressable>
+                  </View>
                 ))}
               </View>
             </View>
@@ -458,13 +594,29 @@ export function ReportScreen() {
                     {session.operation_type}
                   </Text>
                   <Text style={[styles.timeCell, styles.timeColArea]}>{fmtArea(session.area_ha)}</Text>
-                  <Text style={[styles.timeCell, styles.timeColDuration]}>{fmtCurrency(session.wage_total)}</Text>
+                  <Text style={[styles.timeCell, styles.timeColDuration]}>{fmtCurrency(session.total_cost_inr ?? session.wage_total)}</Text>
                 </Pressable>
               ))}
             </Card>
           ) : null}
 
-          <Button variant="outline" fullWidth onPress={() => {}}>
+          <Button
+            variant="outline"
+            fullWidth
+            style={styles.exportButton}
+            onPress={() => {
+              if (!report?.sessions?.length) return;
+              if (report.sessions.length === 1) {
+                handleExportSession(report.sessions[0].id);
+              } else {
+                Alert.alert(
+                  'Export Report',
+                  `Export individual session reports via the download icon on each session row, or select a session to view its full summary.`,
+                  [{ text: 'OK' }],
+                );
+              }
+            }}
+          >
             <View style={styles.exportContent}>
               <Download size={16} color={colors.primary} />
               <Text style={styles.exportText}>Export Report</Text>
@@ -535,6 +687,100 @@ export function ReportScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal
+        visible={timePickerField !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeTimePicker}
+      >
+        <Pressable style={styles.modalOverlay} onPress={closeTimePicker}>
+          <Pressable style={styles.timePickerCard} onPress={() => {}}>
+            <Text style={styles.timePickerTitle}>
+              {timePickerField === 'start' ? 'Start Time' : 'End Time'}
+            </Text>
+            <Text style={styles.timePickerHint}>Hour 1–12 · Minute 00–60</Text>
+
+            <View style={styles.timePickerColumns}>
+              <View style={styles.timePickerColumn}>
+                <Text style={styles.timePickerColLabel}>Hour</Text>
+                <ScrollView style={styles.timePickerScroll} showsVerticalScrollIndicator={false}>
+                  {HOURS_12.map((h) => (
+                    <Pressable
+                      key={h}
+                      onPress={() => setPickerHour12(h)}
+                      style={[styles.timePickerCell, pickerHour12 === h && styles.timePickerCellSelected]}
+                    >
+                      <Text
+                        style={[
+                          styles.timePickerCellText,
+                          pickerHour12 === h && styles.timePickerCellTextSelected,
+                        ]}
+                      >
+                        {h}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              <View style={styles.timePickerColumn}>
+                <Text style={styles.timePickerColLabel}>Min</Text>
+                <ScrollView style={styles.timePickerScroll} showsVerticalScrollIndicator={false}>
+                  {MINUTES_0_60.map((m) => (
+                    <Pressable
+                      key={m}
+                      onPress={() => setPickerMinute(m)}
+                      style={[styles.timePickerCell, pickerMinute === m && styles.timePickerCellSelected]}
+                    >
+                      <Text
+                        style={[
+                          styles.timePickerCellText,
+                          pickerMinute === m && styles.timePickerCellTextSelected,
+                        ]}
+                      >
+                        {String(m).padStart(2, '0')}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              <View style={styles.timePickerAmPmColumn}>
+                <Text style={styles.timePickerColLabel}> </Text>
+                {(['AM', 'PM'] as const).map((ap) => (
+                  <Pressable
+                    key={ap}
+                    onPress={() => setPickerAmPm(ap)}
+                    style={[
+                      styles.timePickerAmPmButton,
+                      pickerAmPm === ap && styles.timePickerAmPmButtonSelected,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.timePickerAmPmText,
+                        pickerAmPm === ap && styles.timePickerAmPmTextSelected,
+                      ]}
+                    >
+                      {ap}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.timePickerActions}>
+              <Pressable style={styles.timePickerCancelBtn} onPress={closeTimePicker}>
+                <Text style={styles.timePickerCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.timePickerDoneBtn} onPress={applyTimePicker}>
+                <Text style={styles.timePickerDoneText}>Done</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScrollView>
   );
 }
@@ -591,6 +837,136 @@ const styles = StyleSheet.create({
   dateButtonText: {
     ...typography.body,
     color: colors.text,
+  },
+  timeField: {
+    minHeight: 52,
+    borderWidth: 1,
+    borderColor: '#D6DCE5',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  timeFieldText: {
+    ...typography.body,
+    color: colors.text,
+  },
+  timePickerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: spacing.lg,
+    gap: spacing.md,
+    maxWidth: 400,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  timePickerTitle: {
+    ...typography.h5,
+    color: colors.text,
+    fontWeight: '700',
+  },
+  timePickerHint: {
+    ...typography.bodySmall,
+    color: '#6B7280',
+  },
+  timePickerColumns: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'stretch',
+  },
+  timePickerColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  timePickerColLabel: {
+    ...typography.labelSmall,
+    color: '#6B7280',
+    marginBottom: spacing.xs,
+    textAlign: 'center',
+  },
+  timePickerScroll: {
+    maxHeight: 220,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  timePickerCell: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  timePickerCellSelected: {
+    backgroundColor: `${colors.primary}22`,
+  },
+  timePickerCellText: {
+    ...typography.body,
+    color: '#374151',
+  },
+  timePickerCellTextSelected: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  timePickerAmPmColumn: {
+    width: 72,
+    justifyContent: 'flex-start',
+    paddingTop: 22,
+    gap: spacing.sm,
+  },
+  timePickerAmPmButton: {
+    paddingVertical: spacing.md,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  timePickerAmPmButtonSelected: {
+    backgroundColor: `${colors.primary}22`,
+    borderColor: colors.primary,
+  },
+  timePickerAmPmText: {
+    ...typography.label,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  timePickerAmPmTextSelected: {
+    color: colors.primary,
+  },
+  timePickerActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  timePickerCancelBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  timePickerCancelText: {
+    ...typography.label,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  timePickerDoneBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  timePickerDoneText: {
+    ...typography.label,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   label: {
     ...typography.labelSmall,
@@ -746,6 +1122,34 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
+  sessionCardRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  sessionCardMain: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: spacing.md,
+    shadowColor: '#000000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  sessionDownloadBtn: {
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    shadowColor: '#000000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
   sessionCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -874,6 +1278,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
+  },
+  exportButton: {
+    minHeight: 44,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
   },
   exportText: {
     ...typography.label,

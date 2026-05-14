@@ -81,6 +81,21 @@ export function RegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const namePlaceholder = useMemo(() => {
+    switch (role) {
+      case 'owner':
+        return 'e.g. Ravi Sharma';
+      case 'operator':
+        return 'e.g. Suresh Kumar';
+      case 'farmer':
+        return 'e.g. Anita Devi';
+      case 'researcher':
+        return 'e.g. Dr. Priya Nair';
+      default:
+        return 'Your full name';
+    }
+  }, [role]);
+
   const roleSpecificFields = useMemo(() => {
     switch (role) {
       case 'owner':
@@ -91,12 +106,14 @@ export function RegisterScreen() {
               value={businessName}
               onChangeText={setBusinessName}
               autoCapitalize="words"
+              placeholder="e.g. Sharma Agro Services"
             />
             <AuthField
               label="GST Number"
               value={gstNumber}
               onChangeText={setGstNumber}
               autoCapitalize="characters"
+              placeholder="e.g. 22AAAAA0000A1Z5"
             />
           </>
         );
@@ -108,12 +125,14 @@ export function RegisterScreen() {
               value={licenseNumber}
               onChangeText={setLicenseNumber}
               autoCapitalize="characters"
+              placeholder="e.g. MH1420180001234"
             />
             <AuthField
               label="Experience (Years)"
               value={experienceYears}
               onChangeText={setExperienceYears}
               keyboardType="number-pad"
+              placeholder="e.g. 5"
             />
           </>
         );
@@ -125,18 +144,21 @@ export function RegisterScreen() {
               value={farmName}
               onChangeText={setFarmName}
               autoCapitalize="words"
+              placeholder="e.g. Green Valley Farm"
             />
             <AuthField
               label="Farm Location"
               value={farmLocation}
               onChangeText={setFarmLocation}
               autoCapitalize="words"
+              placeholder="e.g. Nashik, Maharashtra"
             />
             <AuthField
               label="Total Land (Hectares)"
               value={totalLandHectares}
               onChangeText={setTotalLandHectares}
               keyboardType="number-pad"
+              placeholder="e.g. 12.5"
             />
           </>
         );
@@ -285,6 +307,7 @@ export function RegisterScreen() {
             autoCapitalize="words"
             textContentType="name"
             autoComplete="name"
+            placeholder={namePlaceholder}
           />
           <AuthField
             label="Phone *"
@@ -303,6 +326,7 @@ export function RegisterScreen() {
             keyboardType="email-address"
             autoComplete="email"
             textContentType="emailAddress"
+            placeholder="name@example.com"
           />
           <AuthField
             label="Password *"
@@ -311,6 +335,7 @@ export function RegisterScreen() {
             secureTextEntry
             autoComplete="password-new"
             textContentType="newPassword"
+            placeholder="At least 8 characters"
           />
           <AuthField
             label="Confirm Password *"
@@ -318,6 +343,7 @@ export function RegisterScreen() {
             onChangeText={setConfirm}
             secureTextEntry
             textContentType="newPassword"
+            placeholder="Re-enter your password"
           />
 
           {roleSpecificFields}

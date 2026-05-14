@@ -93,6 +93,7 @@ def generate_report(filters: ReportFilters, db: Session) -> dict:
             OperationSession.area_ha,
             User.name,
             WageRecord.total_amount,
+            OperationSession.total_cost_inr,
         )
         .join(User, User.id == OperationSession.operator_id)
         .outerjoin(WageRecord, WageRecord.session_id == OperationSession.id)
@@ -112,6 +113,7 @@ def generate_report(filters: ReportFilters, db: Session) -> dict:
                 "area_ha": float(row[4]) if row[4] is not None else None,
                 "operator_name": row[5],
                 "wage_total_amount": float(row[6]) if row[6] is not None else None,
+                "total_cost_inr": float(row[7]) if row[7] is not None else None,
             }
         )
 

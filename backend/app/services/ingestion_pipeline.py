@@ -33,8 +33,8 @@ def ingest_reading(
     """
     new_id = uuid.uuid4()
     active_session = db.query(OperationSession).filter(
-        OperationSession.status == "active"
-    ).first()
+        OperationSession.status.in_(("active", "paused"))
+    ).order_by(OperationSession.started_at.desc()).first()
     values = {
         "id": new_id,
         "device_id": normalized.device_id,
@@ -84,6 +84,8 @@ def ingest_reading(
 
     evaluate(loaded, db)
     broadcast_update(loaded)
+    if commit:
+        db.commit()
     return True, loaded
 
 

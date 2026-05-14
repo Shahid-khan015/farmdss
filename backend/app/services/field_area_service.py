@@ -6,6 +6,9 @@ import uuid
 from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
+
+GPS_FEED_KEYS = ("position_tracking", "gpsloc")
 
 
 def parse_gps_points(session_id: uuid.UUID, db: Session) -> List[Tuple[float, float]]:
@@ -17,7 +20,10 @@ def parse_gps_points(session_id: uuid.UUID, db: Session) -> List[Tuple[float, fl
             db.query(IoTReading)
             .filter(
                 IoTReading.session_id == session_id,
-                IoTReading.feed_key == "gpsloc",
+                or_(
+                    IoTReading.feed_key == GPS_FEED_KEYS[0],
+                    IoTReading.feed_key == GPS_FEED_KEYS[1],
+                ),
             )
             .order_by(IoTReading.device_timestamp.asc())
             .all()
@@ -120,6 +126,18 @@ def compute_covered_area_ha(
     if polygon_area_ha > 0:
         return min(covered_area_ha, polygon_area_ha)
     return covered_area_ha
+
+
+def compute_total_path_distance_m(points: List[Tuple[float, float]]) -> float:
+    """Return the total length of the GPS path in metres."""
+    if len(points) < 2:
+        return 0.0
+    total = 0.0
+    for i in range(len(points) - 1):
+        lat1, lon1 = points[i]
+        lat2, lon2 = points[i + 1]
+        total += haversine_distance_m(lat1, lon1, lat2, lon2)
+    return total
 
 
 def finalize_session_area(session_id: uuid.UUID, db: Session) -> float:

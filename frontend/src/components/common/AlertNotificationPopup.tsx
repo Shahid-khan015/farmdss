@@ -23,7 +23,7 @@ function paletteForSeverity(severity: 'critical' | 'warning' | 'normal') {
       borderColor: '#E6B8B7',
       accentColor: '#C00000',
       icon: 'x-circle' as const,
-      title: 'Error',
+      title: 'Alert',
     };
   }
 

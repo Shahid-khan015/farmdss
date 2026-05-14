@@ -1,4 +1,9 @@
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+
 import { api } from './api';
+import { getAccessToken } from './authStorage';
+import { showSessionExpiredDialog } from './sessionExpired';
 import type { PaginatedResponse, DeleteResponse } from '../types/api';
 import type { Simulation, SimulationRunRequest } from '../types/simulation';
 
@@ -26,4 +31,40 @@ export const simulationService = {
     return data;
   },
 };
+
+export async function downloadSimulationExport(
+  simulationId: string,
+  format: 'csv' | 'pdf',
+): Promise<void> {
+  const token = await getAccessToken();
+  const baseUrl = api.defaults.baseURL ?? 'http://localhost:8000/api/v1';
+  const url = `${baseUrl}/simulations/${simulationId}/export?format=${format}`;
+
+  const ext = format === 'pdf' ? 'pdf' : 'csv';
+  const filename = `simulation_${simulationId.slice(0, 8)}.${ext}`;
+  const localUri = `${FileSystem.cacheDirectory}${filename}`;
+
+  const downloadResult = await FileSystem.downloadAsync(url, localUri, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (downloadResult.status === 401) {
+    showSessionExpiredDialog();
+    throw new Error('Session expired. Please sign in again.');
+  }
+  if (downloadResult.status !== 200) {
+    throw new Error(`Export failed (status ${downloadResult.status})`);
+  }
+
+  const canShare = await Sharing.isAvailableAsync();
+  if (!canShare) {
+    throw new Error('Sharing is not available on this device');
+  }
+
+  await Sharing.shareAsync(downloadResult.uri, {
+    mimeType: format === 'pdf' ? 'application/pdf' : 'text/csv',
+    dialogTitle: `Simulation Report - ${format.toUpperCase()}`,
+    UTI: format === 'pdf' ? 'com.adobe.pdf' : 'public.comma-separated-values-text',
+  });
+}
 

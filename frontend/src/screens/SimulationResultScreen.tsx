@@ -1,5 +1,13 @@
-import React from 'react';
-import { ScrollView, View, StyleSheet, Pressable, Dimensions } from 'react-native';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  View,
+  StyleSheet,
+  Pressable,
+  Dimensions,
+} from 'react-native';
 import { Text } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -14,6 +22,7 @@ import { RecommendationCard } from '../components/simulation/RecommendationCard'
 import { LoadStatusGauge } from '../components/simulation/LoadStatusGauge';
 import { Card } from '../components/common/Card';
 import { useSimulation } from '../hooks/useSimulations';
+import { downloadSimulationExport } from '../services/simulationService';
 import { fmtNum } from '../utils/formatters';
 
 function toFiniteNumber(value: unknown): number | null {
@@ -47,6 +56,7 @@ export function SimulationResultScreen() {
   const isPhablet = width > 600;
   const id = route.params?.id as string;
   const simQ = useSimulation(id);
+  const [exportingFormat, setExportingFormat] = useState<'csv' | 'pdf' | null>(null);
 
   if (simQ.isLoading) return <LoadingSpinner />;
   if (simQ.error) return <ErrorMessage message={(simQ.error as Error).message} />;
@@ -66,59 +76,59 @@ export function SimulationResultScreen() {
   const recommendations = s.recommendations ?? (r as any).recommendations ?? null;
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-      {/* GRADIENT HEADER */}
-      <LinearGradient
-        colors={[colors.primary, '#66BB6A']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.headerGradient}
+    <View style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headerInfo}>
-          <View style={styles.idBadge}>
-            <Text style={styles.idBadgeText}>ID: {s.id ? s.id.substring(0, 8).toUpperCase() : 'N/A'}</Text>
+        {/* GRADIENT HEADER */}
+        <LinearGradient
+          colors={[colors.primary, '#66BB6A']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.headerGradient}
+        >
+          <View style={styles.headerInfoRow}>
+            <View style={styles.idBadge}>
+              <Text style={styles.idBadgeText}>ID: {s.id ? s.id.substring(0, 8).toUpperCase() : 'N/A'}</Text>
+            </View>
+            <Text style={styles.headerDateTime}>
+              {s.created_at ? new Date(s.created_at).toLocaleDateString() : 'N/A'}
+            </Text>
           </View>
-          <Text style={styles.headerDateTime}>
-            {s.created_at ? new Date(s.created_at).toLocaleDateString() : 'N/A'}
-          </Text>
-        </View>
 
-        {/* Quick Status Badges */}
-        <View style={[styles.badgesRow, isCompact && { justifyContent: 'center' }]}>
-          {slip !== null && (
-            <View style={[styles.statusBadge, { borderLeftColor: getColorByMetric('slip', slip) }]}>
-              <Feather name="trending-down" size={14} color="#FFFFFF" />
-              <Text style={styles.badgeLabel}>Slip</Text>
-              <Text style={styles.badgeValue}>{fmtNum(slip, 1)}%</Text>
-            </View>
-          )}
-          {efficiency !== null && (
-            <View style={[styles.statusBadge, { borderLeftColor: getColorByMetric('efficiency', efficiency) }]}>
-              <Feather name="award" size={14} color="#FFFFFF" />
-              <Text style={styles.badgeLabel}>Eff.</Text>
-              <Text style={styles.badgeValue}>{fmtNum(efficiency, 1)}%</Text>
-            </View>
-          )}
-          {powerUtil !== null && (
-            <View style={[styles.statusBadge, { borderLeftColor: getColorByMetric('power_utilization', powerUtil) }]}>
-              <Feather name="battery" size={14} color="#FFFFFF" />
-              <Text style={styles.badgeLabel}>Power</Text>
-              <Text style={styles.badgeValue}>{fmtNum(powerUtil, 1)}%</Text>
-            </View>
-          )}
-        </View>
-      </LinearGradient>
+          <View style={[styles.badgesRow, isCompact && { justifyContent: 'center' }]}>
+            {slip !== null && (
+              <View style={styles.statusBadge}>
+                <Text style={styles.badgeLabel}>Slip</Text>
+                <Text style={styles.badgeValue}>{fmtNum(slip, 1)}%</Text>
+              </View>
+            )}
+            {efficiency !== null && (
+              <View style={styles.statusBadge}>
+                <Text style={styles.badgeLabel}>Eff</Text>
+                <Text style={styles.badgeValue}>{fmtNum(efficiency, 1)}%</Text>
+              </View>
+            )}
+            {powerUtil !== null && (
+              <View style={styles.statusBadge}>
+                <Text style={styles.badgeLabel}>Power</Text>
+                <Text style={styles.badgeValue}>{fmtNum(powerUtil, 1)}%</Text>
+              </View>
+            )}
+          </View>
+        </LinearGradient>
 
-      {/* LOAD STATUS GAUGE */}
-      {powerUtil !== null && (
-        <View style={styles.gaugeWrapper}>
-          <LoadStatusGauge loadPercentage={powerUtil} />
-        </View>
-      )}
+        {/* LOAD STATUS GAUGE */}
+        {powerUtil !== null && (
+          <View style={styles.gaugeWrapper}>
+            <LoadStatusGauge loadPercentage={powerUtil} />
+          </View>
+        )}
 
-      {/* KEY METRICS GRID */}
-      <View style={styles.keyMetricsContainer}>
-        <View style={[styles.keyMetricsGrid, isPhablet && styles.keyMetricsGridWide]}>
+        {/* KEY METRICS GRID */}
+        <View style={styles.keyMetricsContainer}>
+          <View style={[styles.keyMetricsGrid, isPhablet && styles.keyMetricsGridWide]}>
           {slip !== null && (
             <Card variant="elevated" spacing="comfortable" style={styles.keyMetricCard}>
               <View style={styles.keyMetricContent}>
@@ -161,81 +171,122 @@ export function SimulationResultScreen() {
             </Card>
           )}
 
-          {tracEff !== null && (
-            <Card variant="elevated" spacing="comfortable" style={styles.keyMetricCard}>
-              <View style={styles.keyMetricContent}>
-                <View style={[styles.keyMetricIcon, { backgroundColor: `${getColorByMetric('traction_efficiency', tracEff)}20` }]}>
-                  <Feather name="zap" size={22} color={getColorByMetric('traction_efficiency', tracEff)} />
+            {tracEff !== null && (
+              <Card variant="elevated" spacing="comfortable" style={styles.keyMetricCard}>
+                <View style={styles.keyMetricContent}>
+                  <View style={[styles.keyMetricIcon, { backgroundColor: `${getColorByMetric('traction_efficiency', tracEff)}20` }]}>
+                    <Feather name="zap" size={22} color={getColorByMetric('traction_efficiency', tracEff)} />
+                  </View>
+                  <Text style={styles.keyMetricLabel}>Traction Eff.</Text>
+                  <Text style={[styles.keyMetricValue, { color: getColorByMetric('traction_efficiency', tracEff) }]}>
+                    {fmtNum(tracEff, 1)}%
+                  </Text>
                 </View>
-                <Text style={styles.keyMetricLabel}>Traction Eff.</Text>
-                <Text style={[styles.keyMetricValue, { color: getColorByMetric('traction_efficiency', tracEff) }]}>
-                  {fmtNum(tracEff, 1)}%
-                </Text>
-              </View>
-            </Card>
-          )}
+              </Card>
+            )}
+          </View>
         </View>
-      </View>
 
-      {/* OPERATING CONDITIONS */}
-      <CollapsibleSection title="Operating Conditions" icon="settings" defaultExpanded>
-        <ConditionsGrid data={r} isPhablet={isPhablet} />
-      </CollapsibleSection>
+        {/* OPERATING CONDITIONS */}
+        <CollapsibleSection title="Operating Conditions" icon="settings" defaultExpanded>
+          <ConditionsGrid data={r} isPhablet={isPhablet} />
+        </CollapsibleSection>
 
-      {/* PERFORMANCE METRICS */}
-      <CollapsibleSection title="Performance Metrics" icon="activity" defaultExpanded>
-        <PerformanceMetricsGrid data={r} isPhablet={isPhablet} />
-      </CollapsibleSection>
+        {/* PERFORMANCE METRICS */}
+        <CollapsibleSection title="Performance Metrics" icon="activity" defaultExpanded>
+          <PerformanceMetricsGrid data={r} isPhablet={isPhablet} />
+        </CollapsibleSection>
 
-      {/* FIELD PERFORMANCE */}
-      <CollapsibleSection title="Field Performance" icon="layout" defaultExpanded>
-        <FieldPerformanceGrid data={r} isPhablet={isPhablet} />
-      </CollapsibleSection>
+        {/* FIELD PERFORMANCE */}
+        <CollapsibleSection title="Field Performance" icon="layout" defaultExpanded>
+          <FieldPerformanceGrid data={r} isPhablet={isPhablet} />
+        </CollapsibleSection>
 
-      {/* FUEL & CONSUMPTION */}
-      <CollapsibleSection title="Fuel Consumption" icon="droplets" defaultExpanded>
-        <FuelConsumptionGrid data={r} isPhablet={isPhablet} />
-      </CollapsibleSection>
+        {/* FUEL & CONSUMPTION */}
+        <CollapsibleSection title="Fuel Consumption" icon="droplets" defaultExpanded>
+          <FuelConsumptionGrid data={r} isPhablet={isPhablet} />
+        </CollapsibleSection>
 
-      {/* BALLAST REQUIREMENTS */}
-      <CollapsibleSection title="Ballast Requirements" icon="package" defaultExpanded>
-        <BallastGrid data={r} isPhablet={isPhablet} />
-      </CollapsibleSection>
+        {/* BALLAST REQUIREMENTS */}
+        <CollapsibleSection title="Ballast Requirements" icon="package" defaultExpanded>
+          <BallastGrid data={r} isPhablet={isPhablet} />
+        </CollapsibleSection>
 
-      {/* RECOMMENDATIONS */}
-      {(statusMsg || recommendations || slip !== null || loadStatus) && (
-        <View style={styles.recommendationsWrapper}>
-          <RecommendationCard statusMessage={statusMsg} recommendations={recommendations} slip={slip} loadStatus={loadStatus} />
+        {/* RECOMMENDATIONS */}
+        {(statusMsg || recommendations || slip !== null || loadStatus) && (
+          <View style={styles.recommendationsWrapper}>
+            <RecommendationCard statusMessage={statusMsg} recommendations={recommendations} slip={slip} loadStatus={loadStatus} />
+          </View>
+        )}
+
+        {/* ACTION BUTTONS */}
+        <View style={styles.actionsContainer}>
+          <Pressable
+            style={({ pressed }) => [styles.actionButton, styles.primaryButton, pressed && styles.buttonPressed]}
+            onPress={() => nav.navigate('SimulationSetup')}
+          >
+            <Feather name="play-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.primaryButtonText}>Run New</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.actionButton, styles.secondaryButton, pressed && styles.buttonPressed]}
+            onPress={() => nav.navigate('SimulationHistory')}
+          >
+            <Feather name="list" size={20} color={colors.primary} />
+            <Text style={styles.secondaryButtonText}>History</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.actionButton, styles.secondaryButton, pressed && styles.buttonPressed]}
+            onPress={() => {
+              Alert.alert(
+                'Export Simulation Report',
+                'Choose a format to export this simulation result.',
+                [
+                  {
+                    text: 'Export CSV',
+                    onPress: async () => {
+                      setExportingFormat('csv');
+                      try {
+                        await downloadSimulationExport(id, 'csv');
+                      } catch (e: any) {
+                        Alert.alert('Export Failed', e?.message ?? 'Could not export CSV');
+                      } finally {
+                        setExportingFormat(null);
+                      }
+                    },
+                  },
+                  {
+                    text: 'Export PDF',
+                    onPress: async () => {
+                      setExportingFormat('pdf');
+                      try {
+                        await downloadSimulationExport(id, 'pdf');
+                      } catch (e: any) {
+                        Alert.alert('Export Failed', e?.message ?? 'Could not export PDF');
+                      } finally {
+                        setExportingFormat(null);
+                      }
+                    },
+                  },
+                  { text: 'Cancel', style: 'cancel' },
+                ],
+              );
+            }}
+          >
+            {exportingFormat ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Feather name="download" size={20} color={colors.primary} />
+            )}
+            <Text style={styles.secondaryButtonText}>
+              {exportingFormat ? `Export ${exportingFormat.toUpperCase()}...` : 'Export'}
+            </Text>
+          </Pressable>
         </View>
-      )}
-
-      {/* ACTION BUTTONS */}
-      <View style={styles.actionsContainer}>
-        <Pressable
-          style={({ pressed }) => [styles.actionButton, styles.primaryButton, pressed && styles.buttonPressed]}
-          onPress={() => nav.navigate('SimulationSetup')}
-        >
-          <Feather name="play-circle" size={20} color="#FFFFFF" />
-          <Text style={styles.primaryButtonText}>Run New</Text>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [styles.actionButton, styles.secondaryButton, pressed && styles.buttonPressed]}
-          onPress={() => nav.navigate('SimulationHistory')}
-        >
-          <Feather name="list" size={20} color={colors.primary} />
-          <Text style={styles.secondaryButtonText}>History</Text>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [styles.actionButton, styles.secondaryButton, pressed && styles.buttonPressed]}
-          onPress={() => {}}
-        >
-          <Feather name="download" size={20} color={colors.primary} />
-          <Text style={styles.secondaryButtonText}>Export</Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -381,6 +432,10 @@ function MetricCard({
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   scrollContainer: {
     paddingBottom: spacing.xxl,
     backgroundColor: colors.background,
@@ -391,10 +446,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
-    marginHorizontal: -spacing.lg,
-    marginTop: -spacing.lg,
     marginBottom: spacing.lg,
     gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    borderRadius: 24,
+  },
+  headerInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
   headerTopBar: {
     flexDirection: 'row',
@@ -416,9 +477,6 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: spacing.md,
     textAlign: 'center',
-  },
-  headerInfo: {
-    gap: spacing.sm,
   },
   idBadge: {
     alignSelf: 'flex-start',
@@ -445,10 +503,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 85,
     backgroundColor: 'rgba(255,255,255,0.12)',
-    borderLeftWidth: 3,
     borderRadius: borderRadius.md,
     padding: spacing.sm,
     gap: spacing.xs,
+    alignItems: 'center',
   },
   badgeLabel: {
     ...typography.bodySmall,
@@ -482,6 +540,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: '45%',
     marginBottom: 0,
+    borderRadius: 20,
   },
   keyMetricContent: {
     alignItems: 'center',
@@ -584,6 +643,7 @@ const styles = StyleSheet.create({
   actionsContainer: {
     paddingHorizontal: spacing.lg,
     gap: spacing.md,
+    paddingBottom: spacing.lg,
   },
   actionButton: {
     flexDirection: 'row',

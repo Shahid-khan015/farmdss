@@ -99,6 +99,8 @@ export function useSessionActions() {
 export function useSessionDetail(sessionId: string | null) {
   const mountedRef = useRef(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inFlightRef = useRef(false);
+  const hasLoadedRef = useRef(false);
   const [session, setSession] = useState<SessionDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,9 +112,13 @@ export function useSessionDetail(sessionId: string | null) {
         setIsLoading(false);
         setError(null);
       }
+      hasLoadedRef.current = false;
       return;
     }
-    const shouldShowLoading = !session;
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+
+    const shouldShowLoading = !hasLoadedRef.current;
     if (mountedRef.current && shouldShowLoading) {
       setIsLoading(true);
     }
@@ -121,13 +127,15 @@ export function useSessionDetail(sessionId: string | null) {
       const data = await getSessionDetail(sessionId);
       if (!mountedRef.current) return;
       setSession(data);
+      hasLoadedRef.current = true;
     } catch (err) {
       if (!mountedRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to fetch session detail');
     } finally {
+      inFlightRef.current = false;
       if (mountedRef.current && shouldShowLoading) setIsLoading(false);
     }
-  }, [sessionId, session]);
+  }, [sessionId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -139,9 +147,15 @@ export function useSessionDetail(sessionId: string | null) {
     }
 
     if (sessionId) {
+      // Default to 15s when session status not yet known (first load).
+      // For completed/aborted sessions back-off to 60s since data is static.
+      const pollMs =
+        session?.status === 'completed' || session?.status === 'aborted'
+          ? 60000
+          : 15000;
       intervalRef.current = setInterval(() => {
         void refetch();
-      }, 10000);
+      }, pollMs);
     }
 
     return () => {
@@ -151,7 +165,7 @@ export function useSessionDetail(sessionId: string | null) {
         intervalRef.current = null;
       }
     };
-  }, [refetch, sessionId]);
+  }, [refetch, sessionId, session?.status]);
 
   if (!sessionId) {
     return { session: null, isLoading: false, error: null as string | null, refetch };
