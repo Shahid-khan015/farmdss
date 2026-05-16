@@ -12,6 +12,7 @@ import { useGPSPath, useSessionDetail } from '../hooks/useSession';
 import { useIoTDashboard } from '../hooks/useIoTDashboard';
 import type { IoTFeedReading, IoTFeedsMap } from '../types/iot';
 import { spacing, typography } from '../theme';
+import { fmtAreaHa } from '../utils/formatters';
 
 type RouteParams = { sessionId?: string };
 type GPSPoint = { lat: number; lon: number; timestamp: string };
@@ -142,7 +143,7 @@ export function FieldMapScreen() {
     });
     const label = session?.operation_type ?? 'FIELD-01';
     const safeLabel = JSON.stringify(label);
-    const areaLabel = areaHa != null ? `${areaHa.toFixed(2)} ha` : '';
+    const areaLabel = areaHa != null ? fmtAreaHa(areaHa) : '';
     const safeAreaLabel = JSON.stringify(areaLabel);
     const tileUrl =
       tileMode === 'satellite'
@@ -326,7 +327,7 @@ export function FieldMapScreen() {
 
       <View style={styles.statsBar}>
         <StatItem label="POINTS" value={String(totalPoints || mapPoints.length)} />
-        <StatItem label="AREA" value={`${(areaHa ?? 0).toFixed(2)} ha`} />
+        <StatItem label="AREA" value={fmtAreaHa(areaHa ?? 0, '0.0000 ha')} />
         <StatItem label="SPEED" value={`${(speed ?? 0).toFixed(1)} km/h`} />
         <StatItem
           label="TIME"

@@ -24,6 +24,7 @@ import { useImplements } from '../hooks/useImplements';
 import { useTractors } from '../hooks/useTractors';
 import { downloadSessionExport, getAreaSummary, getSessionReport, type SessionSummaryReport } from '../services/SessionService';
 import { borderRadius, spacing, typography } from '../theme';
+import { fmtAreaHa } from '../utils/formatters';
 
 function fmtDate(v?: string) {
   if (!v) return '-';
@@ -59,8 +60,7 @@ function fmtDurationMinutes(total?: number | null): string {
 }
 
 function fmtArea(area?: number | null): string {
-  if (area == null || !Number.isFinite(area)) return '--';
-  return `${area.toFixed(2)} ha`;
+  return fmtAreaHa(area);
 }
 
 function fmtDistance(metres?: number | null): string {
@@ -657,7 +657,7 @@ export function SessionSummaryScreen() {
                   ? `${fmtCurrencyInr(resolvedOperationBilling.rate).replace('.00', '')} × ${resolvedOperationBilling.hours.toFixed(2)} h`
                   : 'Waiting for session duration / hourly rate'
                 : resolvedOperationBilling.rate != null && resolvedOperationBilling.area != null
-                  ? `${fmtCurrencyInr(resolvedOperationBilling.rate).replace('.00', '')} × ${resolvedOperationBilling.area.toFixed(2)} ha`
+                  ? `${fmtCurrencyInr(resolvedOperationBilling.rate).replace('.00', '')} × ${resolvedOperationBilling.area.toFixed(4)} ha`
                   : 'Waiting for finalized area/rate'}
             </Text>
             <Text style={styles.calcFormulaText}>=</Text>

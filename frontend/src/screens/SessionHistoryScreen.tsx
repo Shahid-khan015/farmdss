@@ -18,6 +18,7 @@ import { useSessions } from '../hooks/useSession';
 import { useTractors } from '../hooks/useTractors';
 import type { SessionResponse } from '../services/SessionService';
 import { borderRadius, spacing, typography } from '../theme';
+import { fmtAreaHa } from '../utils/formatters';
 
 type FilterStatus = 'all' | 'active' | 'completed' | 'aborted';
 
@@ -154,7 +155,7 @@ export function SessionHistoryScreen() {
           },
           {
             icon: <Ruler size={16} color={colors.primary} />,
-            text: `Area: ${item.area_ha != null ? `${item.area_ha.toFixed(2)} ha` : '--'}`,
+            text: `Area: ${fmtAreaHa(item.area_ha)}`,
           },
           {
             icon: <Activity size={16} color={colors.primary} />,

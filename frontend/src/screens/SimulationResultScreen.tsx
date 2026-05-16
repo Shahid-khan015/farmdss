@@ -23,7 +23,9 @@ import { LoadStatusGauge } from '../components/simulation/LoadStatusGauge';
 import { Card } from '../components/common/Card';
 import { useSimulation } from '../hooks/useSimulations';
 import { downloadSimulationExport } from '../services/simulationService';
-import { fmtNum } from '../utils/formatters';
+import { fmtAreaHa, fmtNum } from '../utils/formatters';
+
+type FeatherIconName = React.ComponentProps<typeof Feather>['name'];
 
 function toFiniteNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -46,6 +48,41 @@ function getColorByMetric(metricName: string, value: number | null): string {
     default:
       return colors.primary;
   }
+}
+
+function getStatusColor(status?: string | null) {
+  if (status === 'Stable') return colors.success;
+  if (status === 'Heavy Load') return colors.warning;
+  return colors.danger;
+}
+
+function buildEngineeringWarnings(data: any) {
+  const warnings = Array.isArray(data.warnings) ? [...data.warnings] : [];
+  const slip = toFiniteNumber(data.slip);
+  const powerUtil = toFiniteNumber(data.power_utilization);
+  const fieldEff = toFiniteNumber(data.field_efficiency);
+  const status = data.status;
+  if (slip !== null && slip > 15) warnings.push('High wheel slip detected.');
+  if (powerUtil !== null && powerUtil > 95) warnings.push('Implement load exceeds optimal range.');
+  if (fieldEff !== null && fieldEff < 60) warnings.push('Low field efficiency detected.');
+  if (status === 'Unstable' || status === 'Not Recommended') warnings.push('Unstable operation detected.');
+  return Array.from(new Set(warnings));
+}
+
+function buildDynamicRecommendations(data: any) {
+  const provided = Array.isArray(data.recommendation_messages) ? data.recommendation_messages : [];
+  const recommendations = [...provided];
+  const slip = toFiniteNumber(data.slip);
+  const draftForce = toFiniteNumber(data.draft_force);
+  const tracEff = toFiniteNumber(data.traction_efficiency);
+  const fuel = toFiniteNumber(data.fuel_consumption_per_hectare);
+  const powerUtil = toFiniteNumber(data.power_utilization);
+  if (slip !== null && slip > 15) recommendations.push('Add ballast', 'Reduce operating depth');
+  if (powerUtil !== null && powerUtil > 90) recommendations.push('Reduce implement width', 'Increase tractor HP');
+  if (tracEff !== null && tracEff < 60) recommendations.push('Reduce operating speed');
+  if (fuel !== null && fuel > 45) recommendations.push('Reduce operating depth');
+  if (draftForce !== null && powerUtil !== null && powerUtil > 85) recommendations.push('Use a lighter implement pass');
+  return Array.from(new Set(recommendations));
 }
 
 export function SimulationResultScreen() {
@@ -73,7 +110,13 @@ export function SimulationResultScreen() {
   const tracEff = toFiniteNumber((r as any).traction_efficiency);
   const loadStatus = (r as any).load_status ?? null;
   const statusMsg = s.status_message ?? (r as any).status_message ?? null;
-  const recommendations = s.recommendations ?? (r as any).recommendations ?? null;
+  const simulationStatus = (r as any).status ?? (powerUtil !== null && powerUtil > 85 ? 'Heavy Load' : 'Stable');
+  const confidence = (r as any).confidence ?? 'Moderate';
+  const engineeringWarnings = buildEngineeringWarnings(r);
+  const dynamicRecommendations = buildDynamicRecommendations(r);
+  const recommendations = dynamicRecommendations.length
+    ? dynamicRecommendations.join('; ')
+    : s.recommendations ?? (r as any).recommendations ?? null;
 
   return (
     <View style={styles.screen}>
@@ -95,6 +138,16 @@ export function SimulationResultScreen() {
             <Text style={styles.headerDateTime}>
               {s.created_at ? new Date(s.created_at).toLocaleDateString() : 'N/A'}
             </Text>
+          </View>
+          <View style={styles.engineeringBadgeRow}>
+            <View style={[styles.engineeringStatusBadge, { backgroundColor: `${getStatusColor(simulationStatus)}25` }]}>
+              <Text style={styles.engineeringBadgeLabel}>Status</Text>
+              <Text style={styles.engineeringBadgeValue}>{simulationStatus}</Text>
+            </View>
+            <View style={styles.engineeringStatusBadge}>
+              <Text style={styles.engineeringBadgeLabel}>Confidence</Text>
+              <Text style={styles.engineeringBadgeValue}>{confidence}</Text>
+            </View>
           </View>
 
           <View style={[styles.badgesRow, isCompact && { justifyContent: 'center' }]}>
@@ -123,6 +176,17 @@ export function SimulationResultScreen() {
         {powerUtil !== null && (
           <View style={styles.gaugeWrapper}>
             <LoadStatusGauge loadPercentage={powerUtil} />
+          </View>
+        )}
+
+        {engineeringWarnings.length > 0 && (
+          <View style={styles.warningStack}>
+            {engineeringWarnings.map((warning) => (
+              <View key={warning} style={styles.warningBanner}>
+                <Feather name="alert-triangle" size={16} color={colors.warning} />
+                <Text style={styles.warningText}>{warning}</Text>
+              </View>
+            ))}
           </View>
         )}
 
@@ -297,7 +361,7 @@ function ConditionsGrid({ data, isPhablet }: { data: any; isPhablet: boolean }) 
       <MetricItem label="Depth" value={toFiniteNumber(data.depth)} unit="cm" />
       <MetricItem label="Speed" value={toFiniteNumber(data.speed)} unit="km/h" />
       <MetricItem label="Cone Index" value={toFiniteNumber(data.cone_index)} unit="kPa" />
-      <MetricItem label="Field Area" value={toFiniteNumber(data.field_area)} unit="ha" />
+      <MetricItem label="Field Area" value={fmtAreaHa(toFiniteNumber(data.field_area))} />
       <MetricItem label="Field Length" value={toFiniteNumber(data.field_length)} unit="m" />
       <MetricItem label="Field Width" value={toFiniteNumber(data.field_width)} unit="m" />
       <MetricItem label="Turns" value={data.number_of_turns} />
@@ -312,12 +376,12 @@ function PerformanceMetricsGrid({ data, isPhablet }: { data: any; isPhablet: boo
 
   return (
     <View style={[styles.metricsGrid, isPhablet && styles.metricsGridWide]}>
-      <MetricCard label="Draft Force" value={draftKN} unit="kN" icon="hammer" decimals={2} />
+      <MetricCard label="Draft Force" value={draftKN} unit="kN" icon="tool" decimals={2} />
       <MetricCard label="Drawbar Power" value={toFiniteNumber(data.drawbar_power)} unit="kW" icon="zap" decimals={2} />
-      <MetricCard label="Slip" value={toFiniteNumber(data.slip)} unit="%" icon="trending-down" decimals={1} showProgress color={getColorByMetric('slip', toFiniteNumber(data.slip))} />
+      <MetricCard label="Slip" value={toFiniteNumber(data.slip)} unit="%" icon="trending-down" decimals={1} showProgress color={getColorByMetric('slip', toFiniteNumber(data.slip))} rangeLabel="Optimal: 8-15%" />
       <MetricCard label="Net Traction" value={toFiniteNumber(data.coefficient_net_traction)} icon="link" decimals={3} />
       <MetricCard label="Motion Resistance" value={toFiniteNumber(data.motion_resistance)} icon="minimize-2" decimals={3} />
-      <MetricCard label="Power Util." value={toFiniteNumber(data.power_utilization)} unit="%" icon="battery" decimals={1} showProgress color={getColorByMetric('power_utilization', toFiniteNumber(data.power_utilization))} />
+      <MetricCard label="Power Util." value={toFiniteNumber(data.power_utilization)} unit="%" icon="battery" decimals={1} showProgress color={getColorByMetric('power_utilization', toFiniteNumber(data.power_utilization))} rangeLabel="Target: 65-90%" />
       <MetricCard label="Front Weight" value={toFiniteNumber(data.front_weight_utilization)} icon="arrow-up" decimals={2} />
       <MetricCard label="Rear Weight" value={toFiniteNumber(data.rear_weight_utilization)} icon="arrow-down" decimals={2} />
     </View>
@@ -330,7 +394,7 @@ function FieldPerformanceGrid({ data, isPhablet }: { data: any; isPhablet: boole
     <View style={[styles.metricsGrid, isPhablet && styles.metricsGridWide]}>
       <MetricCard label="Theoretical Cap." value={toFiniteNumber(data.field_capacity_theoretical)} unit="ha/h" icon="target" decimals={2} />
       <MetricCard label="Actual Cap." value={toFiniteNumber(data.field_capacity_actual)} unit="ha/h" icon="check" decimals={2} />
-      <MetricCard label="Field Efficiency" value={toFiniteNumber(data.field_efficiency)} unit="%" icon="percent" decimals={1} showProgress color={getColorByMetric('field_efficiency', toFiniteNumber(data.field_efficiency))} />
+      <MetricCard label="Field Efficiency" value={toFiniteNumber(data.field_efficiency)} unit="%" icon="percent" decimals={1} showProgress color={getColorByMetric('field_efficiency', toFiniteNumber(data.field_efficiency))} rangeLabel="Typical: 70-90%" />
       <MetricCard label="Total Time" value={toFiniteNumber(data.total_time_hours)} unit="h" icon="clock" decimals={2} />
     </View>
   );
@@ -341,7 +405,7 @@ function FuelConsumptionGrid({ data, isPhablet }: { data: any; isPhablet: boolea
   return (
     <View style={[styles.metricsGrid, isPhablet && styles.metricsGridWide]}>
       <MetricCard label="Specific Fuel" value={toFiniteNumber(data.specific_fuel_consumption)} unit="l/kW·h" icon="droplet" decimals={3} color={colors.accent} />
-      <MetricCard label="Fuel/Hectare" value={toFiniteNumber(data.fuel_consumption_per_hectare)} unit="l/ha" icon="fuel" decimals={2} color={colors.accent} />
+      <MetricCard label="Fuel/Hectare" value={toFiniteNumber(data.fuel_consumption_per_hectare)} unit="l/ha" icon="droplet" decimals={2} color={colors.accent} />
       <MetricCard label="Overall Eff." value={toFiniteNumber(data.overall_efficiency)} unit="%" icon="award" decimals={1} showProgress color={getColorByMetric('efficiency', toFiniteNumber(data.overall_efficiency))} />
     </View>
   );
@@ -381,14 +445,16 @@ function MetricCard({
   decimals = 2,
   showProgress = false,
   color = colors.primary,
+  rangeLabel,
 }: {
   label: string;
   value: number | null;
   unit?: string;
-  icon?: string;
+  icon?: FeatherIconName;
   decimals?: number;
   showProgress?: boolean;
   color?: string;
+  rangeLabel?: string;
 }) {
   if (value === null) return null;
 
@@ -427,6 +493,7 @@ function MetricCard({
           />
         </View>
       )}
+      {rangeLabel && <Text style={styles.rangeLabel}>{rangeLabel}</Text>}
     </Card>
   );
 }
@@ -517,11 +584,55 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
   },
+  engineeringBadgeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    flexWrap: 'wrap',
+  },
+  engineeringStatusBadge: {
+    flex: 1,
+    minWidth: 130,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  engineeringBadgeLabel: {
+    ...typography.labelSmall,
+    color: 'rgba(255,255,255,0.82)',
+  },
+  engineeringBadgeValue: {
+    ...typography.label,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    marginTop: spacing.xs,
+  },
 
   // Gauges
   gaugeWrapper: {
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.xl,
+  },
+  warningStack: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  warningText: {
+    ...typography.bodySmall,
+    color: colors.text,
+    flex: 1,
   },
 
   // Key Metrics
@@ -630,6 +741,11 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     // No borderRadius here - we let the parent clip it for a cleaner look
+  },
+  rangeLabel: {
+    ...typography.labelSmall,
+    color: colors.muted,
+    marginTop: spacing.xs,
   },
 
   // Recommendations

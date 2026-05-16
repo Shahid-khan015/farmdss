@@ -15,6 +15,7 @@ import { useImplements } from '../../hooks/useImplements';
 import { useTractors } from '../../hooks/useTractors';
 import { colors } from '../../constants/colors';
 import { borderRadius, spacing, typography } from '../../theme';
+import { fmtAreaHa } from '../../utils/formatters';
 
 function fmtDateTime(value: string): string {
   return new Date(value).toLocaleString('en-IN', {
@@ -26,8 +27,7 @@ function fmtDateTime(value: string): string {
 }
 
 function fmtArea(value?: number | null): string {
-  if (value == null) return '--';
-  return `${value.toFixed(2)} ha`;
+  return fmtAreaHa(value);
 }
 
 function formatMinutes(totalMinutes: number): string {

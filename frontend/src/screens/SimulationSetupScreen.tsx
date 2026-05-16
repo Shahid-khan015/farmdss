@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Alert,
   ScrollView,
   View,
   StyleSheet,
@@ -31,7 +32,7 @@ type Mode = 'preset' | 'custom';
 function validateRequiredNumber(
   value: string,
   label: string,
-  opts?: { integer?: boolean; min?: number },
+  opts?: { integer?: boolean; min?: number; max?: number; unit?: string },
 ) {
   const trimmed = value.trim();
   if (!trimmed) return `${label} is required`;
@@ -39,7 +40,54 @@ function validateRequiredNumber(
   if (!Number.isFinite(n)) return `${label} must be a valid number`;
   if (opts?.integer && !Number.isInteger(n)) return `${label} must be a whole number`;
   if (opts?.min != null && n < opts.min) return `${label} must be >= ${opts.min}`;
+  if (opts?.max != null && n > opts.max) return `${label} must be <= ${opts.max}`;
   return null;
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getSoilFactor(texture: string) {
+  if (texture === 'Fine') return 0.95;
+  if (texture === 'Coarse') return 0.65;
+  return 0.8;
+}
+
+function getCompatibilityPreview({
+  tractor,
+  implement,
+  speed,
+  depth,
+  coneIndex,
+  soilTexture,
+}: {
+  tractor: any;
+  implement: any;
+  speed: number | null;
+  depth: number | null;
+  coneIndex: number | null;
+  soilTexture: SoilTexture;
+}) {
+  const ptoPower = toFiniteNumber(tractor?.pto_power);
+  const width = toFiniteNumber(implement?.width ?? implement?.working_width_m);
+  if (!tractor || !implement || !ptoPower || !speed || !depth || !coneIndex || !width) {
+    return null;
+  }
+
+  const a = toFiniteNumber(implement.asae_param_a) ?? 350;
+  const b = toFiniteNumber(implement.asae_param_b) ?? 45;
+  const c = toFiniteNumber(implement.asae_param_c) ?? 3;
+  const coneFactor = Math.min(Math.max(coneIndex / 1500, 0.65), 1.6);
+  const draftForce = getSoilFactor(soilTexture) * coneFactor * (a + b * speed + c * speed * speed) * width * depth;
+  const requiredPower = (draftForce * (speed / 3.6)) / 1000;
+  const availablePower = ptoPower * ((toFiniteNumber(tractor.transmission_efficiency) ?? 85) / 100);
+  const loadPct = availablePower > 0 ? (requiredPower / availablePower) * 100 : 0;
+  const status = loadPct > 85 ? 'Not Recommended' : loadPct > 70 ? 'Heavy Load' : 'Compatible';
+  const risk = loadPct > 85 ? 'High' : loadPct > 70 ? 'Moderate' : 'Low';
+  return { requiredPower, loadPct, status, risk };
 }
 
 export function SimulationSetupScreen() {
@@ -74,24 +122,34 @@ export function SimulationSetupScreen() {
     [soilTexture]
   );
 
-  const [turns, setTurns] = useState('10');
   const [isEditingConeIndex, setIsEditingConeIndex] = useState(false);
 
   const customErrors = useMemo(() => {
     if (mode !== 'custom') return {};
     return {
-      coneIndex: validateRequiredNumber(autoFill.values.coneIndex, 'Cone Index', { min: 0 }),
-      depth: validateRequiredNumber(autoFill.values.depth, 'Depth', { min: 0 }),
-      speed: validateRequiredNumber(autoFill.values.speed, 'Speed', { min: 0 }),
+      coneIndex: validateRequiredNumber(autoFill.values.coneIndex, 'Cone Index', { min: 300, max: 3000, unit: 'kPa' }),
+      depth: validateRequiredNumber(autoFill.values.depth, 'Depth', { min: 5, max: 35, unit: 'cm' }),
+      speed: validateRequiredNumber(autoFill.values.speed, 'Speed', { min: 2, max: 8, unit: 'km/h' }),
       fieldLength: validateRequiredNumber(autoFill.values.fieldLength, 'Field Length', { min: 0 }),
       fieldWidth: validateRequiredNumber(autoFill.values.fieldWidth, 'Field Width', { min: 0 }),
       fieldArea: validateRequiredNumber(autoFill.values.fieldArea, 'Field Area', { min: 0 }),
-      turns: validateRequiredNumber(turns, 'Number of Turns', { integer: true, min: 0 }),
     };
-  }, [mode, autoFill.values, turns]);
+  }, [mode, autoFill.values]);
+
+  const selectedTractorForValidation = tractorsQ.data?.items?.find((t) => t.id === tractorId);
+  const selectedTractorPower = toFiniteNumber(selectedTractorForValidation?.pto_power);
+  const tractorPowerError = useMemo(() => {
+    if (!tractorId) return null;
+    if (selectedTractorPower === null) return 'Selected tractor is missing PTO power.';
+    if (selectedTractorPower <= 10) {
+      return `Selected tractor PTO power is ${selectedTractorPower.toFixed(1)} kW. Simulation requires more than 10 kW.`;
+    }
+    return null;
+  }, [tractorId, selectedTractorPower]);
 
   const canRun = useMemo(() => {
     if (!tractorId || !implementId) return false;
+    if (tractorPowerError) return false;
     if (mode === 'preset') return !!presetId;
     return Object.values(customErrors).every((value) => !value);
   }, [
@@ -100,6 +158,7 @@ export function SimulationSetupScreen() {
     mode,
     presetId,
     customErrors,
+    tractorPowerError,
   ]);
 
   const loadPresets = async () => {
@@ -126,6 +185,16 @@ export function SimulationSetupScreen() {
   const implementOptions = implementsQ.data?.items ?? [];
   const selectedTractor = tractors.find((t) => t.id === tractorId);
   const selectedImplement = implementOptions.find((i) => i.id === implementId);
+  const compatibilityPreview = mode === 'custom'
+    ? getCompatibilityPreview({
+        tractor: selectedTractor,
+        implement: selectedImplement,
+        speed: toFiniteNumber(autoFill.values.speed),
+        depth: toFiniteNumber(autoFill.values.depth),
+        coneIndex: toFiniteNumber(autoFill.values.coneIndex),
+        soilTexture,
+      })
+    : null;
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
@@ -213,6 +282,12 @@ export function SimulationSetupScreen() {
           )}
           {!tractorId && (
             <Text style={styles.errorText}>Tractor is required</Text>
+          )}
+          {tractorPowerError && (
+            <View style={styles.engineeringInlineWarning}>
+              <Feather name="alert-triangle" size={14} color={colors.warning} />
+              <Text style={styles.engineeringInlineWarningText}>{tractorPowerError}</Text>
+            </View>
           )}
         </View>
       </CollapsibleSection>
@@ -446,6 +521,11 @@ export function SimulationSetupScreen() {
               <Text style={styles.customSectionSubtitle}>
                 Set the soil resistance and work-rate parameters that feed the simulation.
               </Text>
+              <View style={styles.safeRangeStrip}>
+                <Text style={styles.safeRangeText}>Safe ranges: speed 2-8 km/h</Text>
+                <Text style={styles.safeRangeText}>depth 5-35 cm</Text>
+                <Text style={styles.safeRangeText}>cone index 300-3000 kPa</Text>
+              </View>
 
               <View style={styles.coneCard}>
                 <View style={styles.coneCardHeader}>
@@ -521,7 +601,6 @@ export function SimulationSetupScreen() {
                       }}
                       items={coneIndexOptions}
                       containerStyle={styles.conePickerContainer}
-                      style={styles.conePickerStyle}
                     />
                   </View>
                 )}
@@ -577,6 +656,60 @@ export function SimulationSetupScreen() {
                     : undefined
                 }
               />
+              {compatibilityPreview && (
+                <View style={styles.compatibilityCard}>
+                  <View style={styles.compatibilityHeader}>
+                    <View style={styles.compatibilityTitleRow}>
+                      <Feather
+                        name={
+                          compatibilityPreview.status === 'Compatible'
+                            ? 'check-circle'
+                            : compatibilityPreview.status === 'Heavy Load'
+                              ? 'alert-triangle'
+                              : 'x-circle'
+                        }
+                        size={16}
+                        color={
+                          compatibilityPreview.status === 'Compatible'
+                            ? colors.success
+                            : compatibilityPreview.status === 'Heavy Load'
+                              ? colors.warning
+                              : colors.danger
+                        }
+                      />
+                      <Text style={styles.compatibilityTitle}>Compatibility Preview</Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.compatibilityBadge,
+                        compatibilityPreview.status === 'Compatible' && styles.compatibilityBadgeGood,
+                        compatibilityPreview.status === 'Heavy Load' && styles.compatibilityBadgeWarn,
+                        compatibilityPreview.status === 'Not Recommended' && styles.compatibilityBadgeBad,
+                      ]}
+                    >
+                      <Text style={styles.compatibilityBadgeText}>{compatibilityPreview.status}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.compatibilityMetrics}>
+                    <View style={styles.compatibilityMetric}>
+                      <Text style={styles.compatibilityMetricLabel}>Required Power</Text>
+                      <Text style={styles.compatibilityMetricValue}>
+                        {compatibilityPreview.requiredPower.toFixed(1)} kW
+                      </Text>
+                    </View>
+                    <View style={styles.compatibilityMetric}>
+                      <Text style={styles.compatibilityMetricLabel}>Tractor Load</Text>
+                      <Text style={styles.compatibilityMetricValue}>
+                        {compatibilityPreview.loadPct.toFixed(0)}%
+                      </Text>
+                    </View>
+                    <View style={styles.compatibilityMetric}>
+                      <Text style={styles.compatibilityMetricLabel}>Risk</Text>
+                      <Text style={styles.compatibilityMetricValue}>{compatibilityPreview.risk}</Text>
+                    </View>
+                  </View>
+                </View>
+              )}
             </View>
 
             <View style={styles.customSectionCard}>
@@ -630,16 +763,6 @@ export function SimulationSetupScreen() {
                   'Area (ha) = (Length x Width) / 10,000'
                 }
               />
-              <Input
-                label="Number of Turns"
-                placeholder="count"
-                value={turns}
-                onChangeText={setTurns}
-                keyboardType="number-pad"
-                error={!!customErrors.turns}
-                helperText={customErrors.turns ?? undefined}
-                containerStyle={styles.inputField}
-              />
             </View>
 
 
@@ -663,26 +786,29 @@ export function SimulationSetupScreen() {
           disabled={!canRun || run.isPending}
           loading={run.isPending}
           onPress={async () => {
-            const payload: any = {
-              tractor_id: tractorId,
-              implement_id: implementId,
-            };
-            if (mode === 'preset') {
-              payload.operating_conditions_preset_id = presetId;
-            } else {
-              payload.cone_index = Number(autoFill.values.coneIndex);
-              payload.depth = Number(autoFill.values.depth);
-              payload.speed = Number(autoFill.values.speed);
-              payload.field_area = Number(autoFill.values.fieldArea);
-              payload.field_length = Number(autoFill.values.fieldLength);
-              payload.field_width = Number(autoFill.values.fieldWidth);
-              payload.number_of_turns = Number(turns);
-              payload.soil_texture = soilTexture;
-              payload.soil_hardness = soilHardness;
-            }
+            try {
+              const payload: any = {
+                tractor_id: tractorId,
+                implement_id: implementId,
+              };
+              if (mode === 'preset') {
+                payload.operating_conditions_preset_id = presetId;
+              } else {
+                payload.cone_index = Number(autoFill.values.coneIndex);
+                payload.depth = Number(autoFill.values.depth);
+                payload.speed = Number(autoFill.values.speed);
+                payload.field_area = Number(autoFill.values.fieldArea);
+                payload.field_length = Number(autoFill.values.fieldLength);
+                payload.field_width = Number(autoFill.values.fieldWidth);
+                payload.soil_texture = soilTexture;
+                payload.soil_hardness = soilHardness;
+              }
 
-            const sim = await run.mutateAsync(payload);
-            nav.navigate('SimulationResult', { id: sim.id });
+              const sim = await run.mutateAsync(payload);
+              nav.navigate('SimulationResult', { id: sim.id });
+            } catch (e: any) {
+              Alert.alert('Simulation cannot run', e?.message ?? 'Please check the selected tractor and operating inputs.');
+            }
           }}
         >
           Run Simulation
@@ -1038,6 +1164,83 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: -4,
   },
+  safeRangeStrip: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  safeRangeText: {
+    ...typography.labelSmall,
+    color: colors.muted,
+    marginRight: spacing.sm,
+  },
+  compatibilityCard: {
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    gap: spacing.md,
+  },
+  compatibilityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  compatibilityTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flex: 1,
+  },
+  compatibilityTitle: {
+    ...typography.label,
+    color: colors.text,
+  },
+  compatibilityBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+  },
+  compatibilityBadgeGood: {
+    backgroundColor: '#DCFCE7',
+  },
+  compatibilityBadgeWarn: {
+    backgroundColor: '#FEF3C7',
+  },
+  compatibilityBadgeBad: {
+    backgroundColor: '#FEE2E2',
+  },
+  compatibilityBadgeText: {
+    ...typography.labelSmall,
+    color: colors.text,
+    fontWeight: '700',
+  },
+  compatibilityMetrics: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  compatibilityMetric: {
+    flex: 1,
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#F8FAFC',
+  },
+  compatibilityMetricLabel: {
+    ...typography.labelSmall,
+    color: colors.muted,
+  },
+  compatibilityMetricValue: {
+    ...typography.label,
+    color: colors.text,
+    marginTop: spacing.xs,
+  },
   coneCard: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
@@ -1248,6 +1451,23 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.danger,
     marginTop: spacing.md,
+  },
+  engineeringInlineWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    marginTop: spacing.md,
+  },
+  engineeringInlineWarningText: {
+    ...typography.bodySmall,
+    color: colors.text,
+    flex: 1,
   },
   infoStrip: {
     flexDirection: 'row',

@@ -32,6 +32,7 @@ import { colors } from '../constants/colors';
 import { getReportSummary, type ReportSummary } from '../services/ReportService';
 import { downloadSessionExport } from '../services/SessionService';
 import { borderRadius, spacing, typography } from '../theme';
+import { fmtAreaHa } from '../utils/formatters';
 
 const OPERATIONS = [
   'All',
@@ -93,8 +94,7 @@ function fmtTime(value: string): string {
 }
 
 function fmtArea(area?: number | null): string {
-  if (area == null) return '--';
-  return `${area.toFixed(2)} ha`;
+  return fmtAreaHa(area);
 }
 
 function fmtCurrency(amount?: number | null): string {

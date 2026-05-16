@@ -14,6 +14,7 @@ import { useIoTDashboard } from '../../hooks/useIoTDashboard';
 import { useTractors } from '../../hooks/useTractors';
 import { fetchAlerts, type AlertResponse } from '../../services/AlertService';
 import { borderRadius, spacing, typography } from '../../theme';
+import { fmtAreaHa } from '../../utils/formatters';
 
 function fmtDate(v: string): string {
   return new Date(v).toLocaleDateString('en-IN', {
@@ -24,8 +25,7 @@ function fmtDate(v: string): string {
 }
 
 function fmtArea(area?: number | null): string {
-  if (area == null || !Number.isFinite(area)) return '0.00 ha';
-  return `${area.toFixed(2)} ha`;
+  return fmtAreaHa(area, '0.0000 ha');
 }
 
 function fmtCurrency(value?: number | null): string {

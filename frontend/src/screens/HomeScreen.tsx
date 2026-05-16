@@ -23,6 +23,7 @@ import { useDashboardStats } from '../hooks/useDashboardStats';
 import { useActiveSession, useSessions } from '../hooks/useSession';
 import { fetchAlerts, type AlertResponse } from '../services/AlertService';
 import { borderRadius, spacing, typography } from '../theme';
+import { fmtAreaHa } from '../utils/formatters';
 
 /** `_tick` forces re-render while sessions are active (live clock). */
 function formatRunningDuration(startedAt: string, _tick?: number): string {
@@ -440,7 +441,7 @@ export function HomeScreen() {
                       </Text>
                       <Text style={styles.activeSessionMetaDot}> · </Text>
                       <Text style={styles.activeSessionArea}>
-                        {area.toFixed(2)} ha covered
+                        {fmtAreaHa(area, '0.0000 ha')} covered
                       </Text>
                     </View>
                     {unk > 0 ? (

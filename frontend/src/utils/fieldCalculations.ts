@@ -16,8 +16,8 @@ export function calculateFieldAreaHa(
   }
 
   const areaHa = (lengthMeters * widthMeters) / 10_000;
-  const rounded = Math.round(areaHa * 100) / 100;
-  const formatted = rounded.toFixed(2);
+  const rounded = Math.round(areaHa * 10000) / 10000;
+  const formatted = rounded.toFixed(4);
 
   return { areaHa: rounded, formatted };
 }

@@ -80,7 +80,14 @@ api.interceptors.response.use(
       });
       message = parts.join('\n');
     } else if (detail && typeof detail === 'object') {
-      message = JSON.stringify(detail);
+      const validationErrors = Array.isArray((detail as any).errors) ? (detail as any).errors : null;
+      if ((detail as any).status === 'validation_failed' && validationErrors) {
+        message = validationErrors
+          .map((item: any) => item?.message ?? JSON.stringify(item))
+          .join('\n');
+      } else {
+        message = JSON.stringify(detail);
+      }
     } else if (detail != null) {
       message = String(detail);
     } else {

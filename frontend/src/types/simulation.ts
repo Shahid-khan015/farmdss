@@ -31,6 +31,10 @@ export type Simulation = {
   ballast_rear_required?: number | null;
   status_message?: string | null;
   recommendations?: string | null;
+  status?: 'Stable' | 'Heavy Load' | 'Unstable' | 'Not Recommended' | string | null;
+  warnings?: string[] | null;
+  confidence?: 'High' | 'Moderate' | 'Low' | string | null;
+  recommendation_messages?: string[] | null;
 
   created_at: string;
   updated_at: string;
