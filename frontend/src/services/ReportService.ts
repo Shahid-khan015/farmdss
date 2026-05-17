@@ -16,6 +16,7 @@ export interface ReportSummary {
   total_area_ha: number;
   total_duration_hours: number;
   total_wages_paid: number;
+  total_operation_charges?: number;
   total_fuel_litres: number;
   total_fuel_cost: number;
   alert_counts: { warning: number; critical: number };
@@ -33,6 +34,7 @@ export async function getReportSummary(params: {
   end_time?: string;
   operation_type?: string;
   tractor_id?: string;
+  timezone_offset_minutes?: number;
 }): Promise<ReportSummary> {
   const { data } = await api.get<ReportSummaryApi>('/reports/summary', { params });
   return {

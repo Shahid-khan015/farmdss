@@ -715,8 +715,10 @@ const styles = StyleSheet.create({
   menuButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#DCFCE7',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1011,7 +1013,7 @@ const styles = StyleSheet.create({
   sidebar: {
     flex: 1,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.md,
     paddingBottom: spacing.lg,
     justifyContent: 'space-between',
   },
@@ -1022,7 +1024,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   sidebarTitle: {
     ...typography.h5,

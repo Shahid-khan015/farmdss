@@ -107,6 +107,7 @@ export function FarmerDashboardScreen() {
           title={`Welcome, ${user?.name?.split(' ')[0] ?? 'Farmer'}`}
           subtitle="Farmer"
           showMenuButton
+          showSignOut={false}
           onMenuPress={() => setSidebarVisible(true)}
         />
 

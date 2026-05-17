@@ -162,6 +162,7 @@ export function OperatorDashboardScreen() {
             title={`Welcome, ${user?.name?.split(' ')[0] ?? 'Operator'}`}
             subtitle="Operator"
             showMenuButton
+            showSignOut={false}
             onMenuPress={() => setSidebarVisible(true)}
             containerStyle={styles.dashboardHeaderBlend}
             menuButtonStyle={styles.dashboardHeaderMenuButton}
@@ -381,10 +382,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   dashboardHeaderMenuButton: {
-    borderWidth: 0,
-    borderColor: 'transparent',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
   },
   dashboardHeaderSignOutButton: {
     borderColor: '#E5E7EB',

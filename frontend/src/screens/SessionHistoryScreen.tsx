@@ -8,7 +8,6 @@ import { Feather } from '@expo/vector-icons';
 import { OwnerScreenMenuButton } from '../components/navigation/OwnerScreenMenuButton';
 import { Activity, Clock3, Ruler, Tractor as TractorIcon } from 'lucide-react-native';
 
-import { Button } from '../components/common/Button';
 import { ListEntityCard } from '../components/common/ListEntityCard';
 import { ErrorMessage } from '../components/common/ErrorMessage';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
@@ -28,6 +27,8 @@ const FILTERS: Array<{ key: FilterStatus; label: string }> = [
   { key: 'completed', label: 'Completed' },
   { key: 'aborted', label: 'Aborted' },
 ];
+
+const HISTORY_HEADER_OFFSET = 106;
 
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString([], {
@@ -51,19 +52,6 @@ function formatDuration(startedAt: string, endedAt?: string): string {
   return `${hours}h ${minutes}m`;
 }
 
-function operationBadge(operationType: string) {
-  if (operationType === 'Tillage') {
-    return { bg: '#FFF3E8', text: '#C2410C' };
-  }
-  if (operationType === 'Sowing') {
-    return { bg: '#E8F7EC', text: '#1E6B3C' };
-  }
-  if (operationType === 'Spraying') {
-    return { bg: '#E8F2FF', text: '#1D4ED8' };
-  }
-  return { bg: '#EEF2F7', text: '#475569' };
-}
-
 function statusBadge(status: string) {
   if (status === 'active') {
     return { bg: '#E8F7EC', text: '#1E6B3C', label: 'ACTIVE' };
@@ -77,8 +65,8 @@ function statusBadge(status: string) {
   return { bg: '#EEF2F7', text: '#475569', label: 'ABORTED' };
 }
 
-function operatorHeaderOffset(insetsTop: number): number {
-  return insetsTop + 88;
+function historyHeaderOffset(insetsTop: number): number {
+  return insetsTop + HISTORY_HEADER_OFFSET;
 }
 
 export function SessionHistoryScreen() {
@@ -101,7 +89,6 @@ export function SessionHistoryScreen() {
   }, [tractorsQ.data?.items]);
 
   const renderItem = ({ item }: { item: SessionResponse }) => {
-    const opStyle = operationBadge(item.operation_type);
     const sStyle = statusBadge(item.status);
     const tractorName = tractorNameById[item.tractor_id] ?? 'Unknown tractor';
     const operatorName = item.operator_name ?? 'Assigned operator';
@@ -114,12 +101,12 @@ export function SessionHistoryScreen() {
       <ListEntityCard
         title={formatDateTime(item.started_at)}
         subtitle={operatorName}
-        style={isOperator ? styles.operatorSessionCard : undefined}
+        style={styles.historySessionCard}
         badge={{
-          icon: <Activity size={14} color={isOperator ? colors.primary : opStyle.text} />,
+          icon: <Activity size={14} color={colors.primary} />,
           label: item.operation_type,
-          textColor: isOperator ? colors.primary : opStyle.text,
-          backgroundColor: isOperator ? `${colors.primary}12` : opStyle.bg,
+          textColor: colors.primary,
+          backgroundColor: `${colors.primary}12`,
         }}
         headerAccessory={
           <View
@@ -171,27 +158,30 @@ export function SessionHistoryScreen() {
   return (
     <View style={styles.container}>
       <View style={[styles.fixedHeaderShell, { paddingTop: insets.top }]}>
-        <View style={[styles.headerWrap, isOperator && styles.operatorHeaderWrap]}>
-          <View style={[styles.headerRow, isOperator && styles.operatorHeaderRow]}>
+        <View style={styles.headerWrap}>
+          <View style={styles.headerRow}>
             {isOwner ? <OwnerScreenMenuButton /> : null}
             {isOperator ? (
               <Pressable
                 onPress={() => setSidebarVisible(true)}
                 accessibilityRole="button"
                 accessibilityLabel="Open sidebar"
-                style={[styles.menuButton, styles.operatorMenuButton]}
+                style={styles.menuButton}
               >
                 <Feather name="menu" size={20} color="#166534" />
               </Pressable>
             ) : null}
-            <Text style={[styles.headerTitle, isOperator && styles.operatorHeaderTitle]}>Session History</Text>
+            <Text style={styles.headerTitle} numberOfLines={1}>Session History</Text>
             {canStartSession ? (
-              <Button
+              <Pressable
                 onPress={() => nav.navigate('SessionSetup')}
-                style={[styles.newSessionButton, isOperator && styles.operatorNewSessionButton]}
+                style={styles.newSessionButton}
+                accessibilityRole="button"
+                accessibilityLabel="Start new session"
               >
-                New Session
-              </Button>
+                <Feather name="plus" size={14} color="#FFFFFF" />
+                <Text style={styles.newSessionButtonText}>New Session</Text>
+              </Pressable>
             ) : null}
           </View>
         </View>
@@ -206,12 +196,11 @@ export function SessionHistoryScreen() {
         onRefresh={() => void refetch()}
         contentContainerStyle={[
           styles.listContent,
-          isOperator && styles.operatorListContent,
-          { paddingTop: isOperator ? operatorHeaderOffset(insets.top) : insets.top + 122 },
+          { paddingTop: historyHeaderOffset(insets.top) },
         ]}
         ListHeaderComponent={
-          <View style={isOperator ? styles.operatorFiltersShell : undefined}>
-            <View style={[styles.filtersRow, isOperator && styles.operatorFiltersRow]}>
+          <View style={styles.filtersShell}>
+            <View style={styles.filtersRow}>
               {FILTERS.map((filter) => {
                 const active = selectedStatus === filter.key;
                 return (
@@ -219,18 +208,14 @@ export function SessionHistoryScreen() {
                     key={filter.key}
                     style={[
                       styles.filterChip,
-                      isOperator && styles.operatorFilterChip,
                       active && styles.filterChipActive,
-                      isOperator && active && styles.operatorFilterChipActive,
                     ]}
                     onPress={() => setSelectedStatus(filter.key)}
                   >
                     <Text
                       style={[
                         styles.filterChipText,
-                        isOperator && styles.operatorFilterChipText,
                         active && styles.filterChipTextActive,
-                        isOperator && active && styles.operatorFilterChipTextActive,
                       ]}
                     >
                       {filter.label}
@@ -243,7 +228,7 @@ export function SessionHistoryScreen() {
         }
         ListEmptyComponent={
           !isLoading && !error ? (
-            <View style={[styles.emptyState, isOperator && styles.operatorEmptyState]}>
+            <View style={styles.emptyState}>
               <View style={styles.emptyIconWrap}>
                 <TractorIcon size={44} color={colors.muted} />
               </View>
@@ -325,15 +310,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   listContent: {
+    paddingHorizontal: spacing.md,
     paddingBottom: spacing.xxl,
   },
-  operatorListContent: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  operatorFiltersShell: {
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+  filtersShell: {
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
   fixedHeaderShell: {
     position: 'absolute',
@@ -348,95 +330,74 @@ const styles = StyleSheet.create({
   },
   headerWrap: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  operatorHeaderWrap: {
-    paddingBottom: spacing.sm,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  operatorHeaderRow: {
-    marginBottom: 0,
   },
   menuButton: {
     width: 40,
     height: 40,
-    borderRadius: borderRadius.md,
-    backgroundColor: `${colors.primary}12`,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  operatorMenuButton: {
-    backgroundColor: '#DCFCE7',
-    borderRadius: 20,
-  },
   headerTitle: {
-    ...typography.h2,
-    color: colors.text,
-    flex: 1,
-  },
-  operatorHeaderTitle: {
     ...typography.h4,
     fontWeight: '700',
+    color: colors.text,
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
   },
   newSessionButton: {
-    backgroundColor: colors.primary,
-    minHeight: 44,
-  },
-  operatorNewSessionButton: {
-    minHeight: 46,
+    minHeight: 40,
     borderRadius: borderRadius.full,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
     backgroundColor: '#16A34A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    flexShrink: 0,
+  },
+  newSessionButtonText: {
+    ...typography.labelSmall,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   filtersRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'center',
     gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  operatorFiltersRow: {
-    marginTop: 0,
-    marginBottom: 0,
+    marginBottom: spacing.xs,
   },
   filterChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
     backgroundColor: '#EEF2F7',
-  },
-  operatorFilterChip: {
-    backgroundColor: '#EDF2F7',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterChipActive: {
-    backgroundColor: `${colors.primary}20`,
-  },
-  operatorFilterChipActive: {
-    backgroundColor: '#111827',
+    backgroundColor: '#DCFCE7',
   },
   filterChipText: {
-    ...typography.bodySmall,
+    ...typography.body,
     color: '#475569',
     fontWeight: '600',
   },
-  operatorFilterChipText: {
-    color: '#0F172A',
-    fontWeight: '500',
-  },
   filterChipTextActive: {
-    color: colors.primary,
-  },
-  operatorFilterChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+    color: '#16A34A',
   },
   statusPill: {
     paddingHorizontal: 10,
@@ -453,9 +414,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xxxl,
-  },
-  operatorEmptyState: {
-    paddingTop: spacing.xxxl,
   },
   emptyIconWrap: {
     width: 96,
@@ -477,7 +435,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xs,
   },
-  operatorSessionCard: {
+  historySessionCard: {
     marginHorizontal: 0,
     width: '100%',
   },

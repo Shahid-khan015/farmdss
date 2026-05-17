@@ -128,7 +128,7 @@ export function TractorListScreen() {
         <Input
           value={q}
           onChangeText={setQ}
-          placeholder="Search tractors by name, manufacturer, or model"
+          placeholder="Search by Name, Manufacturer, or Model"
           style={styles.searchInput}
           containerStyle={styles.searchContainer}
           icon={<Search size={18} color={q ? colors.primary : '#9CA3AF'} />}

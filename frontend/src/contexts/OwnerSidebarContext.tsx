@@ -102,10 +102,7 @@ function OwnerSidebarModal({
       <View style={styles.sidebarOverlay}>
         <View style={[styles.sidebar, { paddingTop: insets.top + spacing.xl }]}>
           <View style={styles.sidebarHeader}>
-            <View>
-              <Text style={styles.sidebarTitle}>Navigation</Text>
-              <Text style={styles.sidebarSubtitle}>Owner tools</Text>
-            </View>
+            <Text style={styles.sidebarTitle}>Menu</Text>
             <Pressable onPress={onClose} style={styles.sidebarClose} accessibilityRole="button" accessibilityLabel="Close sidebar">
               <Feather name="x" size={18} color={colors.text} />
             </Pressable>
@@ -120,9 +117,7 @@ function OwnerSidebarModal({
                 accessibilityRole="button"
                 accessibilityLabel={item.label}
               >
-                <View style={styles.sidebarIcon}>
-                  <Feather name={item.icon} size={18} color={colors.primary} />
-                </View>
+                <Feather name={item.icon} size={18} color={colors.primary} />
                 <Text style={styles.sidebarItemText}>{item.label}</Text>
               </Pressable>
             ))}
@@ -187,62 +182,49 @@ const styles = StyleSheet.create({
   sidebarOverlay: {
     flex: 1,
     flexDirection: 'row',
-    backgroundColor: 'rgba(15, 23, 42, 0.28)',
+    backgroundColor: 'rgba(15, 23, 42, 0.22)',
   },
   sidebar: {
     width: 280,
+    maxWidth: '82%',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
-    justifyContent: 'space-between',
+    borderTopRightRadius: borderRadius.lg,
+    borderBottomRightRadius: borderRadius.lg,
   },
   sidebarBackdrop: {
     flex: 1,
   },
   sidebarHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
   },
   sidebarTitle: {
-    ...typography.h5,
+    ...typography.h4,
     color: colors.text,
     fontWeight: '700',
-  },
-  sidebarSubtitle: {
-    ...typography.bodySmall,
-    color: colors.muted,
-    marginTop: spacing.xs,
   },
   sidebarClose: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
     alignItems: 'center',
     justifyContent: 'center',
   },
   sidebarItems: {
     gap: spacing.sm,
-    flex: 1,
   },
   sidebarItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
     borderRadius: borderRadius.md,
-    backgroundColor: '#F8FAFC',
-  },
-  sidebarIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: `${colors.primary}12`,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   sidebarItemText: {
     ...typography.body,
@@ -254,6 +236,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    alignSelf: 'flex-start',
+    marginTop: 'auto',
   },
   sidebarSignOutText: {
     ...typography.body,

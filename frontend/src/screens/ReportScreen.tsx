@@ -48,7 +48,10 @@ const OPERATIONS = [
 const VIEW_MODES = ['Summary', 'Day-wise', 'Time-wise'] as const;
 
 function ymd(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function parseYmd(value: string): Date | null {
@@ -146,15 +149,15 @@ function isSameDay(a: Date | null, b: Date | null): boolean {
 type AmPm = 'AM' | 'PM';
 
 const HOURS_12 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
-/** 00–60 inclusive (60 rolls to next hour on apply). */
-const MINUTES_0_60 = Array.from({ length: 61 }, (_, i) => i);
+/** 00-59 minute values for the report time filter. */
+const MINUTES_0_59 = Array.from({ length: 60 }, (_, i) => i);
 
 function parseHHMM24(value: string): { h: number; m: number } {
   const [a, b = '0'] = value.trim().split(':');
   const h = Number.parseInt(a, 10);
   const m = Number.parseInt(b, 10);
   const hh = Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : 0;
-  const mm = Number.isFinite(m) ? Math.min(60, Math.max(0, m)) : 0;
+  const mm = Number.isFinite(m) ? Math.min(59, Math.max(0, m)) : 0;
   return { h: hh, m: mm };
 }
 
@@ -173,13 +176,7 @@ function from12hTo24(hour12: number, minute: number, amPm: AmPm): string {
   } else {
     h24 = hour12 === 12 ? 12 : hour12 + 12;
   }
-  let m = minute;
-  if (m === 60) {
-    m = 0;
-    h24 = (h24 + 1) % 24;
-  } else if (m > 60) {
-    m = 59;
-  }
+  const m = Math.min(59, Math.max(0, minute));
   return `${String(h24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
@@ -201,8 +198,8 @@ export function ReportScreen() {
   const [operation, setOperation] = useState<(typeof OPERATIONS)[number]>('All');
   const [startDate, setStartDate] = useState(ymd(thirtyDaysAgo));
   const [endDate, setEndDate] = useState(ymd(today));
-  const [startTime, setStartTime] = useState('06:00');
-  const [endTime, setEndTime] = useState('18:00');
+  const [startTime, setStartTime] = useState('00:00');
+  const [endTime, setEndTime] = useState('23:59');
   const [viewMode, setViewMode] = useState<(typeof VIEW_MODES)[number]>('Summary');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -291,7 +288,7 @@ export function ReportScreen() {
       },
       {
         label: 'Charges',
-        value: fmtCurrency(report.total_wages_paid),
+        value: fmtCurrency(report.total_operation_charges ?? report.total_wages_paid),
         icon: Wallet,
         color: colors.primary,
       },
@@ -316,6 +313,7 @@ export function ReportScreen() {
         end_date: endDate,
         end_time: endTime || undefined,
         operation_type: operation === 'All' ? undefined : operation,
+        timezone_offset_minutes: new Date().getTimezoneOffset(),
       });
       setReport(data);
       setGenerated(true);
@@ -699,7 +697,7 @@ export function ReportScreen() {
             <Text style={styles.timePickerTitle}>
               {timePickerField === 'start' ? 'Start Time' : 'End Time'}
             </Text>
-            <Text style={styles.timePickerHint}>Hour 1–12 · Minute 00–60</Text>
+            <Text style={styles.timePickerHint}>Hour 1-12 · Minute 00-59</Text>
 
             <View style={styles.timePickerColumns}>
               <View style={styles.timePickerColumn}>
@@ -727,7 +725,7 @@ export function ReportScreen() {
               <View style={styles.timePickerColumn}>
                 <Text style={styles.timePickerColLabel}>Min</Text>
                 <ScrollView style={styles.timePickerScroll} showsVerticalScrollIndicator={false}>
-                  {MINUTES_0_60.map((m) => (
+                  {MINUTES_0_59.map((m) => (
                     <Pressable
                       key={m}
                       onPress={() => setPickerMinute(m)}

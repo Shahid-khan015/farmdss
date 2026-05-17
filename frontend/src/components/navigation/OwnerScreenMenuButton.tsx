@@ -38,8 +38,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   menuButtonHome: {
-    borderWidth: 0,
-    borderRadius: 12,
-    backgroundColor: `${colors.primary}12`,
+    borderWidth: 1,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
   },
 });

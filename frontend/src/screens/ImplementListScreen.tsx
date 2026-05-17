@@ -128,7 +128,7 @@ export function ImplementListScreen() {
         <Input
           value={q}
           onChangeText={setQ}
-          placeholder="Search implements by name, type, or manufacturer"
+          placeholder="Search by Name, type, Manufacture or Model"
           style={styles.searchInput}
           containerStyle={styles.searchContainer}
           icon={<Search size={18} color={q ? colors.primary : '#9CA3AF'} />}

@@ -18,6 +18,7 @@ type Props = {
   titleStyle?: StyleProp<TextStyle>;
   subtitleStyle?: StyleProp<TextStyle>;
   signOutLabelStyle?: StyleProp<TextStyle>;
+  showSignOut?: boolean;
 };
 
 export function DashboardAuthHeader({
@@ -31,6 +32,7 @@ export function DashboardAuthHeader({
   titleStyle,
   subtitleStyle,
   signOutLabelStyle,
+  showSignOut = true,
 }: Props) {
   const { user, logout } = useAuth();
 
@@ -52,7 +54,7 @@ export function DashboardAuthHeader({
           {subtitle ? <Text style={[styles.sub, subtitleStyle]}>{subtitle}</Text> : null}
         </View>
       </View>
-      {user ? (
+      {showSignOut && user ? (
         <Pressable
           onPress={() => logout()}
           accessibilityRole="button"

@@ -210,46 +210,61 @@ export function SimulationSetupScreen() {
         </View>
       </View>
 
-      <Card variant="filled" style={styles.heroCard}>
-        <View style={styles.heroRow}>
-          <View style={styles.heroItem}>
-            <Text style={styles.heroLabel}>Tractor</Text>
-            <Text style={styles.heroValue}>{selectedTractor?.name ?? 'Not selected'}</Text>
+      <Card variant="elevated" style={styles.equipmentMatchCard}>
+        <View style={styles.equipmentMatchHeader}>
+          <View>
+            <Text style={styles.equipmentMatchEyebrow}>Equipment Match</Text>
+            <Text style={styles.equipmentMatchTitle}>
+              {selectedTractor && selectedImplement ? 'Ready for setup' : 'Select tractor and implement'}
+            </Text>
           </View>
-          <View style={styles.heroDivider} />
-          <View style={styles.heroItem}>
-            <Text style={styles.heroLabel}>Implement</Text>
-            <Text style={styles.heroValue}>{selectedImplement?.name ?? 'Not selected'}</Text>
+          <View style={styles.heroModeBadge}>
+            <Text style={styles.heroModeBadgeText}>
+              {mode === 'preset' ? 'Preset Conditions' : 'Custom Conditions'}
+            </Text>
           </View>
         </View>
-        <View style={styles.heroModeBadge}>
-          <Text style={styles.heroModeBadgeText}>
-            {mode === 'preset' ? 'Preset Conditions' : 'Custom Conditions'}
-          </Text>
+
+        <View style={styles.equipmentMatchGrid}>
+          <View style={styles.equipmentMatchItem}>
+            <View style={styles.equipmentIconWrap}>
+              <Feather name="truck" size={18} color={colors.primary} />
+            </View>
+            <View style={styles.equipmentMatchText}>
+              <Text style={styles.equipmentMatchLabel}>Tractor</Text>
+              <Text
+                style={[
+                  styles.equipmentMatchValue,
+                  !selectedTractor && styles.equipmentMatchPlaceholder,
+                ]}
+                numberOfLines={2}
+              >
+                {selectedTractor?.name ?? 'Not selected'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.equipmentDivider} />
+
+          <View style={styles.equipmentMatchItem}>
+            <View style={styles.equipmentIconWrap}>
+              <Feather name="tool" size={18} color={colors.primary} />
+            </View>
+            <View style={styles.equipmentMatchText}>
+              <Text style={styles.equipmentMatchLabel}>Implement</Text>
+              <Text
+                style={[
+                  styles.equipmentMatchValue,
+                  !selectedImplement && styles.equipmentMatchPlaceholder,
+                ]}
+                numberOfLines={2}
+              >
+                {selectedImplement?.name ?? 'Not selected'}
+              </Text>
+            </View>
+          </View>
         </View>
       </Card>
-
-      {/* Selection Summary */}
-      {selectedTractor && selectedImplement && (
-        <Card variant="elevated" style={styles.summaryCard}>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <Feather name="truck" size={16} color={colors.primary} />
-              <View style={styles.summaryText}>
-                <Text style={styles.summaryLabel}>Tractor</Text>
-                <Text style={styles.summaryValue}>{selectedTractor.name}</Text>
-              </View>
-            </View>
-            <View style={styles.summaryItem}>
-              <Feather name="tool" size={16} color={colors.primary} />
-              <View style={styles.summaryText}>
-                <Text style={styles.summaryLabel}>Implement</Text>
-                <Text style={styles.summaryValue}>{selectedImplement.name}</Text>
-              </View>
-            </View>
-          </View>
-        </Card>
-      )}
 
       {/* Selection Sections */}
       <CollapsibleSection title="Select Tractor" icon="truck" defaultExpanded>
@@ -869,33 +884,13 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: spacing.xs,
   },
-  heroCard: {
+  equipmentMatchCard: {
     marginBottom: spacing.lg,
-  },
-  heroRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-  },
-  heroItem: {
-    flex: 1,
-  },
-  heroDivider: {
-    width: 1,
-    backgroundColor: '#DED7CE',
-    marginHorizontal: spacing.md,
-  },
-  heroLabel: {
-    ...typography.labelSmall,
-    color: colors.muted,
-    marginBottom: spacing.xs,
-  },
-  heroValue: {
-    ...typography.label,
-    color: colors.text,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
   },
   heroModeBadge: {
     alignSelf: 'flex-start',
-    marginTop: spacing.md,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.full,
@@ -906,25 +901,74 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '600',
   },
-  summaryCard: {
-    marginBottom: spacing.lg,
-  },
-  summaryRow: {
+  equipmentMatchHeader: {
     flexDirection: 'row',
-    gap: spacing.lg,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
-  summaryItem: {
+  equipmentMatchEyebrow: {
+    ...typography.labelSmall,
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.7,
+  },
+  equipmentMatchTitle: {
+    ...typography.h5,
+    color: colors.text,
+    fontWeight: '700',
+    marginTop: spacing.xs / 2,
+  },
+  equipmentMatchGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  equipmentMatchItem: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: `${colors.primary}10`,
-    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    minHeight: 92,
+    borderRadius: borderRadius.lg,
+    backgroundColor: `${colors.primary}08`,
+    borderWidth: 1,
+    borderColor: `${colors.primary}12`,
   },
-  soilSelectionContainer: {
-    marginBottom: spacing.lg,
+  equipmentIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EAF8EF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  equipmentMatchText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  equipmentMatchLabel: {
+    ...typography.labelSmall,
+    color: colors.muted,
+    marginBottom: spacing.xs / 2,
+  },
+  equipmentMatchValue: {
+    ...typography.label,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  equipmentMatchPlaceholder: {
+    color: colors.muted,
+    fontWeight: '500',
+  },
+  equipmentDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: '#E5E7EB',
   },
   sectionTitle: {
     ...typography.label,
@@ -973,18 +1017,6 @@ const styles = StyleSheet.create({
   radioLabelActive: {
     color: colors.primary,
     fontWeight: '600',
-  },
-  summaryText: {
-    flex: 1,
-  },
-  summaryLabel: {
-    ...typography.labelSmall,
-    color: colors.muted,
-  },
-  summaryValue: {
-    ...typography.label,
-    color: colors.text,
-    marginTop: spacing.xs / 2,
   },
   selectionContainer: {
     gap: spacing.md,

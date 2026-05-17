@@ -430,7 +430,7 @@ export function SessionSummaryScreen() {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Pressable style={styles.backButton} onPress={() => nav.goBack()} accessibilityRole="button" accessibilityLabel="Go back">
-              <Feather name="arrow-left" size={20} color={colors.text} />
+              <Feather name="arrow-left" size={24} color={colors.text} />
             </Pressable>
             <Text style={styles.title}>Session Summary</Text>
           </View>
@@ -814,14 +814,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
   },
   title: {
     ...typography.h4,
