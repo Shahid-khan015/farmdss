@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.crud.implement import implement_crud
 from app.crud.simulation import simulation_crud
+from app.middleware.auth import get_current_user, require_role
+from app.models.user import User
 from app.schemas.common import DeleteResponse, PaginatedResponse
 from app.schemas.implement import ImplementCreate, ImplementRead, ImplementUpdate
 from app.schemas.simulation import SimulationRead
@@ -18,6 +20,7 @@ router = APIRouter()
 
 @router.get("", response_model=PaginatedResponse[ImplementRead])
 def list_implements(
+    _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     q: Optional[str] = Query(default=None),
     implement_type: Optional[str] = Query(default=None),
@@ -41,7 +44,11 @@ def list_implements(
 
 
 @router.get("/{id}", response_model=ImplementRead)
-def get_implement(id: uuid.UUID, db: Session = Depends(get_db)):
+def get_implement(
+    id: uuid.UUID,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     obj = implement_crud.get(db, id=id)
     if not obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Implement not found")
@@ -49,12 +56,21 @@ def get_implement(id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=ImplementRead, status_code=status.HTTP_201_CREATED)
-def create_implement(payload: ImplementCreate, db: Session = Depends(get_db)):
+def create_implement(
+    payload: ImplementCreate,
+    _: User = Depends(require_role(["owner"])),
+    db: Session = Depends(get_db),
+):
     return implement_crud.create(db, obj_in=payload)
 
 
 @router.put("/{id}", response_model=ImplementRead)
-def update_implement(id: uuid.UUID, payload: ImplementUpdate, db: Session = Depends(get_db)):
+def update_implement(
+    id: uuid.UUID,
+    payload: ImplementUpdate,
+    _: User = Depends(require_role(["owner"])),
+    db: Session = Depends(get_db),
+):
     obj = implement_crud.get(db, id=id)
     if not obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Implement not found")
@@ -62,7 +78,11 @@ def update_implement(id: uuid.UUID, payload: ImplementUpdate, db: Session = Depe
 
 
 @router.delete("/{id}", response_model=DeleteResponse)
-def delete_implement(id: uuid.UUID, db: Session = Depends(get_db)):
+def delete_implement(
+    id: uuid.UUID,
+    _: User = Depends(require_role(["owner"])),
+    db: Session = Depends(get_db),
+):
     obj = implement_crud.remove(db, id=id)
     if not obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Implement not found")
@@ -72,10 +92,10 @@ def delete_implement(id: uuid.UUID, db: Session = Depends(get_db)):
 @router.get("/{id}/simulations", response_model=PaginatedResponse[SimulationRead])
 def list_implement_simulations(
     id: uuid.UUID,
+    _: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
     total, items = simulation_crud.list_by_implement(db, implement_id=id, limit=limit, offset=offset)
     return {"total": total, "items": items, "limit": limit, "offset": offset}
-

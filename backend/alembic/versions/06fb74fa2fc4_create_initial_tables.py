@@ -32,8 +32,8 @@ def upgrade() -> None:
     sa.Column('asae_param_b', sa.DECIMAL(), nullable=True),
     sa.Column('asae_param_c', sa.DECIMAL(), nullable=True),
     sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_implements_implement_type'), 'implements', ['implement_type'], unique=False)
@@ -51,8 +51,8 @@ def upgrade() -> None:
     sa.Column('field_width', sa.DECIMAL(), nullable=True),
     sa.Column('number_of_turns', sa.Integer(), nullable=True),
     sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_operating_conditions_presets_name'), 'operating_conditions_presets', ['name'], unique=False)
@@ -75,8 +75,8 @@ def upgrade() -> None:
     sa.Column('transmission_efficiency', sa.DECIMAL(), nullable=True),
     sa.Column('power_reserve', sa.DECIMAL(), nullable=True),
     sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_tractors_drive_mode'), 'tractors', ['drive_mode'], unique=False)
@@ -113,8 +113,8 @@ def upgrade() -> None:
     sa.Column('status_message', sa.Text(), nullable=True),
     sa.Column('recommendations', sa.Text(), nullable=True),
     sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.ForeignKeyConstraint(['implement_id'], ['implements.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['operating_conditions_preset_id'], ['operating_conditions_presets.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['tractor_id'], ['tractors.id'], ondelete='CASCADE'),
@@ -136,8 +136,8 @@ def upgrade() -> None:
     sa.Column('rear_static_loaded_radius', sa.Integer(), nullable=True),
     sa.Column('rear_rolling_radius', sa.Integer(), nullable=True),
     sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.ForeignKeyConstraint(['tractor_id'], ['tractors.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )

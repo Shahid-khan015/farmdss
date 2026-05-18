@@ -18,12 +18,19 @@ def _create_engine_with_fallback():
     if url.startswith("sqlite"):
         return create_engine(url, connect_args={"check_same_thread": False})
 
+    connect_args: dict = {}
+    if "postgresql" in url:
+        # Avoid hanging for minutes when Postgres is down or unreachable (common dev pain).
+        connect_args["connect_timeout"] = 5
+
     try:
         eng = create_engine(
             url,
             pool_pre_ping=True,
             pool_size=5,
             max_overflow=10,
+            pool_timeout=30,
+            connect_args=connect_args,
         )
         # smoke-test connection early
         with eng.connect() as _:
