@@ -22,7 +22,15 @@ import { useAuth } from '../contexts/AuthContext';
 import type { AuthStackParamList } from '../navigation/types';
 import type { RegisterRequest, UserRole } from '../types/auth';
 import { spacing, typography } from '../theme';
-import { normalizeIndianPhone } from '../utils/authPhone';
+import { extractIndianLocalDigits, normalizeIndianPhone } from '../utils/authPhone';
+import {
+  validateIndianMobileLocal,
+  validateOptionalEmail,
+  validateOptionalGst,
+  validateOptionalMinLength,
+  validateOptionalNonNegativeInteger,
+  validateOptionalPositiveDecimal,
+} from '../utils/validators';
 
 const AUTH_GREEN = '#1E6B3C';
 
@@ -195,23 +203,81 @@ export function RegisterScreen() {
 
     const trimmedName = name.trim();
     const trimmedEmail = email.trim();
+    const phoneDigits = extractIndianLocalDigits(phone);
     const normalizedPhone = normalizeIndianPhone(phone);
 
     if (trimmedName.length < 2) {
       setError('Name must be at least 2 characters.');
       return;
     }
-    if (!normalizedPhone) {
-      setError('Phone number is required.');
+    const phoneErr = validateIndianMobileLocal(phoneDigits);
+    if (phoneErr) {
+      setError(phoneErr);
+      return;
+    }
+    const emailErr = validateOptionalEmail(trimmedEmail);
+    if (emailErr) {
+      setError(emailErr);
       return;
     }
     if (password.length < 8) {
       setError('Password must be at least 8 characters.');
       return;
     }
+    if (password.length > 128) {
+      setError('Password must be at most 128 characters.');
+      return;
+    }
     if (password !== confirm) {
       setError('Passwords do not match.');
       return;
+    }
+
+    if (role === 'owner') {
+      const bnErr = validateOptionalMinLength(businessName, 'Business name', 2);
+      if (bnErr) {
+        setError(bnErr);
+        return;
+      }
+      const gstErr = validateOptionalGst(gstNumber);
+      if (gstErr) {
+        setError(gstErr);
+        return;
+      }
+    } else if (role === 'operator') {
+      const licErr = validateOptionalMinLength(licenseNumber, 'License number', 4);
+      if (licErr) {
+        setError(licErr);
+        return;
+      }
+      const expErr = validateOptionalNonNegativeInteger(
+        experienceYears,
+        'Experience (years)',
+        80,
+      );
+      if (expErr) {
+        setError(expErr);
+        return;
+      }
+    } else if (role === 'farmer') {
+      const fnErr = validateOptionalMinLength(farmName, 'Farm name', 2);
+      if (fnErr) {
+        setError(fnErr);
+        return;
+      }
+      const flErr = validateOptionalMinLength(farmLocation, 'Farm location', 2);
+      if (flErr) {
+        setError(flErr);
+        return;
+      }
+      const landErr = validateOptionalPositiveDecimal(
+        totalLandHectares,
+        'Total land (hectares)',
+      );
+      if (landErr) {
+        setError(landErr);
+        return;
+      }
     }
 
     const payload: RegisterRequest = {
@@ -312,12 +378,13 @@ export function RegisterScreen() {
           <AuthField
             label="Phone *"
             value={phone}
-            onChangeText={setPhone}
+            onChangeText={(t) => setPhone(extractIndianLocalDigits(t))}
             keyboardType="phone-pad"
             textContentType="telephoneNumber"
             autoComplete="tel"
             prefix="+91"
             placeholder="9876543210"
+            maxLength={10}
           />
           <AuthField
             label="Email (Optional)"

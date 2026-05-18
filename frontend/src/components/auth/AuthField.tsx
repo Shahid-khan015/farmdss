@@ -25,6 +25,7 @@ type AuthFieldProps = {
   autoComplete?: any;
   prefix?: string;
   disabled?: boolean;
+  maxLength?: number;
 };
 
 export function AuthField({
@@ -40,6 +41,7 @@ export function AuthField({
   autoComplete,
   prefix,
   disabled = false,
+  maxLength,
 }: AuthFieldProps) {
   const [showPassword, setShowPassword] = React.useState(false);
   const isPassword = secureTextEntry;
@@ -64,6 +66,7 @@ export function AuthField({
           textContentType={textContentType}
           autoComplete={autoComplete}
           editable={!disabled}
+          maxLength={maxLength}
           placeholderTextColor="#98A2B3"
           style={styles.input}
         />

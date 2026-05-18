@@ -28,7 +28,15 @@ const FILTERS: Array<{ key: FilterStatus; label: string }> = [
   { key: 'aborted', label: 'Aborted' },
 ];
 
-const HISTORY_HEADER_OFFSET = 106;
+/** Body height below status bar (md + row + lg + border). */
+const SESSION_HISTORY_HEADER_BODY_HEIGHT = spacing.md + 40 + spacing.lg + 1;
+
+/** @deprecated Use SESSION_HISTORY_HEADER_BODY_HEIGHT; kept for hot-reload compatibility. */
+const HISTORY_HEADER_OFFSET = SESSION_HISTORY_HEADER_BODY_HEIGHT;
+
+function historyHeaderOffset(insetsTop: number): number {
+  return insetsTop + HISTORY_HEADER_OFFSET;
+}
 
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString([], {
@@ -65,10 +73,6 @@ function statusBadge(status: string) {
   return { bg: '#EEF2F7', text: '#475569', label: 'ABORTED' };
 }
 
-function historyHeaderOffset(insetsTop: number): number {
-  return insetsTop + HISTORY_HEADER_OFFSET;
-}
-
 export function SessionHistoryScreen() {
   const nav = useNavigation<any>();
   const { user, logout } = useAuth();
@@ -77,6 +81,7 @@ export function SessionHistoryScreen() {
   const isOperator = user?.role === 'operator';
   const [selectedStatus, setSelectedStatus] = useState<FilterStatus>('all');
   const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(() => historyHeaderOffset(insets.top));
   const statusParam = selectedStatus === 'all' ? undefined : selectedStatus;
   const canStartSession = isOperator;
 
@@ -157,7 +162,10 @@ export function SessionHistoryScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.fixedHeaderShell, { paddingTop: insets.top }]}>
+      <View
+        style={[styles.fixedHeaderShell, { paddingTop: insets.top }]}
+        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+      >
         <View style={styles.headerWrap}>
           <View style={styles.headerRow}>
             {isOwner ? <OwnerScreenMenuButton /> : null}
@@ -196,7 +204,7 @@ export function SessionHistoryScreen() {
         onRefresh={() => void refetch()}
         contentContainerStyle={[
           styles.listContent,
-          { paddingTop: historyHeaderOffset(insets.top) },
+          { paddingTop: headerHeight },
         ]}
         ListHeaderComponent={
           <View style={styles.filtersShell}>
@@ -314,7 +322,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   filtersShell: {
-    paddingTop: spacing.md,
+    paddingTop: spacing.xs,
     paddingBottom: spacing.sm,
   },
   fixedHeaderShell: {

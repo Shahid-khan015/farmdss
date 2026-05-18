@@ -128,7 +128,7 @@ function MainTabNavigator() {
   const { user } = useAuth();
   const useSidebarNav = user?.role === 'owner' || user?.role === 'researcher';
   const hideTractorImplementTabs = user?.role === 'operator' || user?.role === 'farmer';
-  const hideSimulationTab = useSidebarNav || user?.role === 'operator' || user?.role === 'farmer';
+  const hideSimulationTab = useSidebarNav;
 
   return (
     <Tab.Navigator
@@ -144,15 +144,13 @@ function MainTabNavigator() {
           tabBarIcon: ({ color, size }) => <MaterialCommunityIcons name="sprout" color={color} size={size} />,
         }}
       />
-      {!useSidebarNav ? (
+      {!hideSimulationTab ? (
         <Tab.Screen
-          name="IoTTab"
-          component={IoTStackNavigator}
+          name="SimulationsTab"
+          component={SimulationStackNavigator}
           options={{
-            title: 'IoT',
-            tabBarIcon: ({ color, size }) => (
-              <MaterialCommunityIcons name="view-dashboard-variant" color={color} size={size} />
-            ),
+            title: 'Simulations',
+            tabBarIcon: ({ color, size }) => <MaterialCommunityIcons name="chart-line" color={color} size={size} />,
           }}
         />
       ) : null}
@@ -183,16 +181,6 @@ function MainTabNavigator() {
           options={{
             title: 'Implements',
             tabBarIcon: ({ color, size }) => <MaterialCommunityIcons name="tools" color={color} size={size} />,
-          }}
-        />
-      ) : null}
-      {!hideSimulationTab ? (
-        <Tab.Screen
-          name="SimulationsTab"
-          component={SimulationStackNavigator}
-          options={{
-            title: 'Simulations',
-            tabBarIcon: ({ color, size }) => <MaterialCommunityIcons name="chart-line" color={color} size={size} />,
           }}
         />
       ) : null}

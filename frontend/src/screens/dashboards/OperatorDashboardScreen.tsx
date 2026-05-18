@@ -219,12 +219,21 @@ export function OperatorDashboardScreen() {
               </View>
             ) : null}
 
-            <Button
+            <Pressable
               onPress={() => nav.navigate('ActiveSession', { sessionId: activeSession.id })}
-              style={styles.activeButton}
+              style={({ pressed }) => [
+                styles.activeButton,
+                pressed && styles.activeButtonPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={
+                activeSession.status === 'paused' ? 'Resume operation' : 'View live session'
+              }
             >
-              {activeSession.status === 'paused' ? 'Resume Operation' : 'View Live Session'}
-            </Button>
+              <Text style={styles.activeButtonText}>
+                {activeSession.status === 'paused' ? 'Resume Operation' : 'View Live Session'}
+              </Text>
+            </Pressable>
           </View>
         ) : (
           <Card variant="elevated" spacing="default" style={styles.emptyCard}>
@@ -470,8 +479,18 @@ const styles = StyleSheet.create({
   activeButton: {
     marginTop: spacing.md,
     alignSelf: 'flex-start',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
     backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 0,
+  },
+  activeButtonPressed: {
+    backgroundColor: 'rgba(255,255,255,0.28)',
+  },
+  activeButtonText: {
+    ...typography.label,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   emptyCard: {
     alignItems: 'center',

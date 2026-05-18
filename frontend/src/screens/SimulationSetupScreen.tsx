@@ -462,7 +462,7 @@ export function SimulationSetupScreen() {
             <View style={styles.selectorGrid}>
               <View style={styles.selectorPanel}>
                 <Text style={styles.sectionTitle}>Soil Texture</Text>
-                <View style={styles.radioGroup}>
+                <View style={styles.radioGroupRow}>
                   {(['Fine', 'Medium', 'Coarse'] as SoilTexture[]).map((texture) => (
                     <Pressable
                       key={texture}
@@ -472,6 +472,8 @@ export function SimulationSetupScreen() {
                       }}
                       style={[
                         styles.radioOption,
+                        styles.radioOptionEqual,
+                        styles.radioOptionStacked,
                         soilTexture === texture && styles.radioOptionActive,
                       ]}
                     >
@@ -479,6 +481,7 @@ export function SimulationSetupScreen() {
                         {soilTexture === texture && <View style={styles.radioCircleFilled} />}
                       </View>
                       <Text
+                        numberOfLines={1}
                         style={[
                           styles.radioLabel,
                           soilTexture === texture && styles.radioLabelActive,
@@ -493,28 +496,42 @@ export function SimulationSetupScreen() {
 
               <View style={styles.selectorPanel}>
                 <Text style={styles.sectionTitle}>Soil Hardness</Text>
-                <View style={styles.radioGroup}>
-                  {(['Hard', 'Firm', 'Tilled', 'Soft'] as SoilHardness[]).map((hardness) => (
-                    <Pressable
-                      key={hardness}
-                      onPress={() => setSoilHardness(hardness)}
-                      style={[
-                        styles.radioOption,
-                        soilHardness === hardness && styles.radioOptionActive,
-                      ]}
-                    >
-                      <View style={styles.radioCircle}>
-                        {soilHardness === hardness && <View style={styles.radioCircleFilled} />}
-                      </View>
-                      <Text
-                        style={[
-                          styles.radioLabel,
-                          soilHardness === hardness && styles.radioLabelActive,
-                        ]}
-                      >
-                        {hardness}
-                      </Text>
-                    </Pressable>
+                <View style={styles.radioGroupStack}>
+                  {(
+                    [
+                      ['Hard', 'Firm'],
+                      ['Tilled', 'Soft'],
+                    ] as SoilHardness[][]
+                  ).map((row, rowIndex) => (
+                    <View key={rowIndex} style={styles.radioGroupRow}>
+                      {row.map((hardness) => (
+                        <Pressable
+                          key={hardness}
+                          onPress={() => setSoilHardness(hardness)}
+                          style={[
+                            styles.radioOption,
+                            styles.radioOptionEqual,
+                            styles.radioOptionStacked,
+                            soilHardness === hardness && styles.radioOptionActive,
+                          ]}
+                        >
+                          <View style={styles.radioCircle}>
+                            {soilHardness === hardness && (
+                              <View style={styles.radioCircleFilled} />
+                            )}
+                          </View>
+                          <Text
+                            numberOfLines={1}
+                            style={[
+                              styles.radioLabel,
+                              soilHardness === hardness && styles.radioLabelActive,
+                            ]}
+                          >
+                            {hardness}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
                   ))}
                 </View>
               </View>
@@ -975,20 +992,33 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: spacing.md,
   },
-  radioGroup: {
+  radioGroupRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
+    alignItems: 'stretch',
+    gap: spacing.sm,
+  },
+  radioGroupStack: {
+    gap: spacing.sm,
   },
   radioOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     backgroundColor: colors.background,
+  },
+  radioOptionStacked: {
+    flexDirection: 'column',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+  },
+  radioOptionEqual: {
+    flex: 1,
+    minWidth: 72,
   },
   radioOptionActive: {
     borderColor: colors.primary,
@@ -1002,7 +1032,7 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: spacing.sm,
+    flexShrink: 0,
   },
   radioCircleFilled: {
     width: 10,
@@ -1011,8 +1041,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   radioLabel: {
-    ...typography.body,
+    ...typography.bodySmall,
     color: colors.text,
+    textAlign: 'center',
+    flexShrink: 0,
   },
   radioLabelActive: {
     color: colors.primary,

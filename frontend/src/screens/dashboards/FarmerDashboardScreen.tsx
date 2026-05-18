@@ -241,17 +241,6 @@ export function FarmerDashboardScreen() {
                   style={styles.sidebarItem}
                   onPress={() => {
                     setSidebarVisible(false);
-                    nav.navigate('IoTTab', { screen: 'IoTDashboard' });
-                  }}
-                >
-                  <Feather name="radio" size={18} color={colors.primary} />
-                  <Text style={styles.sidebarItemLabel}>IoT Dashboard</Text>
-                </Pressable>
-
-                <Pressable
-                  style={styles.sidebarItem}
-                  onPress={() => {
-                    setSidebarVisible(false);
                     nav.navigate('Reports');
                   }}
                 >
