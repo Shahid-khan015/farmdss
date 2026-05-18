@@ -17,11 +17,11 @@ export function validateOptionalEmail(email: string): string | null {
   return null;
 }
 
-/** 10-digit Indian mobile without country code (first digit 6–9). */
+/** 10-digit local mobile (digits only; length is the only client-side rule). */
 export function validateIndianMobileLocal(digits: string): string | null {
   if (!digits) return 'Phone number is required.';
   if (digits.length !== 10) return 'Phone number must be exactly 10 digits.';
-  if (!/^[6-9]\d{9}$/.test(digits)) return 'Enter a valid 10-digit mobile number.';
+  if (!/^\d{10}$/.test(digits)) return 'Phone number must contain only digits.';
   return null;
 }
 

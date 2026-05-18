@@ -68,6 +68,24 @@ const ROLE_OPTIONS: Array<{
   },
 ];
 
+function mapRegisterErrorMessage(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes('phone already registered') ||
+    (lower.includes('already registered') && lower.includes('phone'))
+  ) {
+    return 'This mobile number is already registered. Sign in or use a different number.';
+  }
+  if (
+    lower.includes('duplicate email') ||
+    lower.includes('constraint violation') ||
+    lower.includes('unique constraint')
+  ) {
+    return 'Registration could not be completed. This email or phone may already be in use.';
+  }
+  return raw;
+}
+
 export function RegisterScreen() {
   const navigation = useNavigation<Nav>();
   const { register } = useAuth();
@@ -117,11 +135,11 @@ export function RegisterScreen() {
               placeholder="e.g. Sharma Agro Services"
             />
             <AuthField
-              label="GST Number"
+              label="GST Number (Optional)"
               value={gstNumber}
               onChangeText={setGstNumber}
               autoCapitalize="characters"
-              placeholder="e.g. 22AAAAA0000A1Z5"
+              placeholder="Optional — e.g. 22AAAAA0000A1Z5"
             />
           </>
         );
@@ -129,11 +147,11 @@ export function RegisterScreen() {
         return (
           <>
             <AuthField
-              label="License Number"
+              label="License Number (Optional)"
               value={licenseNumber}
               onChangeText={setLicenseNumber}
               autoCapitalize="characters"
-              placeholder="e.g. MH1420180001234"
+              placeholder="Optional — e.g. MH1420180001234"
             />
             <AuthField
               label="Experience (Years)"
@@ -239,17 +257,14 @@ export function RegisterScreen() {
         setError(bnErr);
         return;
       }
-      const gstErr = validateOptionalGst(gstNumber);
-      if (gstErr) {
-        setError(gstErr);
-        return;
+      if (gstNumber.trim()) {
+        const gstErr = validateOptionalGst(gstNumber);
+        if (gstErr) {
+          setError(gstErr);
+          return;
+        }
       }
     } else if (role === 'operator') {
-      const licErr = validateOptionalMinLength(licenseNumber, 'License number', 4);
-      if (licErr) {
-        setError(licErr);
-        return;
-      }
       const expErr = validateOptionalNonNegativeInteger(
         experienceYears,
         'Experience (years)',
@@ -290,9 +305,11 @@ export function RegisterScreen() {
 
     if (role === 'owner') {
       payload.business_name = businessName.trim() || undefined;
-      payload.gst_number = gstNumber.trim() || undefined;
+      const gst = gstNumber.trim();
+      if (gst) payload.gst_number = gst;
     } else if (role === 'operator') {
-      payload.license_number = licenseNumber.trim() || undefined;
+      const license = licenseNumber.trim();
+      if (license) payload.license_number = license;
       payload.experience_years = experienceYears ? Number(experienceYears) : undefined;
     } else if (role === 'farmer') {
       payload.farm_name = farmName.trim() || undefined;
@@ -316,7 +333,8 @@ export function RegisterScreen() {
         ],
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Registration failed.');
+      const raw = e instanceof Error ? e.message : 'Registration failed.';
+      setError(mapRegisterErrorMessage(raw));
     } finally {
       setLoading(false);
     }
