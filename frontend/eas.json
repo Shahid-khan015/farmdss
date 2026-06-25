@@ -1,0 +1,23 @@
+{
+  "cli": {
+    "version": ">= 10.0.0"
+  },
+  "build": {
+    "preview": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://farmdss-backend.onrender.com/api/v1"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://farmdss-backend.onrender.com/api/v1"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  }
+}

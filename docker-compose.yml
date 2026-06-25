@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: tractor_dss_postgres
+    environment:
+      POSTGRES_DB: tractor_dss
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: P@ssw0rd
+    ports:
+      - "5432:5432"
+    volumes:
+      - tractor_dss_pgdata:/var/lib/postgresql/data
+
+volumes:
+  tractor_dss_pgdata:
+
