@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
 import React from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, type Theme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -19,6 +19,7 @@ import type {
   IoTStackParamList,
 } from './types';
 import { colors } from '../constants/colors';
+import { lightPalette } from '../theme/palette';
 import { useAuth } from '../contexts/AuthContext';
 
 import { DashboardRouter } from '../screens/DashboardRouter';
@@ -256,9 +257,29 @@ function RootNavigator() {
   );
 }
 
+/**
+ * React Navigation draws headers and screen containers from its own theme, not the
+ * app palette. Left unset it falls back to `DefaultTheme` (`#f2f2f2` / `#fff`), which
+ * is close to but not the same as `lightPalette`, so headers never quite matched the
+ * screens beneath them. Setting it explicitly also pins navigation chrome to light
+ * regardless of the device appearance, in step with `ThemeProvider`.
+ */
+const navigationTheme: Theme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: lightPalette.bg,
+    card: lightPalette.surface,
+    text: lightPalette.textPrimary,
+    border: lightPalette.border,
+    primary: lightPalette.primary,
+    notification: lightPalette.status.critical.base,
+  },
+};
+
 export function AppNavigator() {
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} theme={navigationTheme}>
       <OwnerSidebarProvider>
         <RootNavigator />
       </OwnerSidebarProvider>

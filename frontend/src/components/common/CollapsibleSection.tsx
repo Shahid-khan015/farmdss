@@ -20,7 +20,7 @@ if (Platform.OS === 'android') {
 
 interface CollapsibleSectionProps {
   title: string;
-  icon?: string;
+  icon?: keyof typeof Feather.glyphMap;
   children: React.ReactNode;
   defaultExpanded?: boolean;
   accessibilityLabel?: string;

@@ -9,6 +9,8 @@ import { spacing, typography, borderRadius } from '../theme';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { CollapsibleSection } from '../components/common/CollapsibleSection';
+import { ReadinessBadge } from '../components/common/ReadinessBadge';
+import { checkImplementReadiness } from '../utils/simulationReadiness';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ErrorMessage } from '../components/common/ErrorMessage';
 import { useDeleteImplement, useImplement } from '../hooks/useImplements';
@@ -47,6 +49,10 @@ export function ImplementDetailScreen() {
             </Text>
           </View>
         </View>
+      </View>
+
+      <View style={{ marginBottom: 16 }}>
+        <ReadinessBadge readiness={checkImplementReadiness(i)} variant="detailed" />
       </View>
 
       {/* Implement Properties Section */}

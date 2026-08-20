@@ -5,7 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import ImplementType
+from app.models.enums import DiscHarrowConfiguration, ImplementType
 from app.schemas.common import Timestamped, UUIDResponse
 
 
@@ -27,6 +27,16 @@ class ImplementBase(BaseModel):
     preset_speed_kmh: Optional[float] = None
     preset_depth_cm: Optional[float] = None
     preset_gearbox_temp_max_c: Optional[float] = None
+
+    # Descriptive only -- no effect on any calculation.
+    configuration: Optional[DiscHarrowConfiguration] = None
+
+    # Rotor specs, for ACTIVE (PTO-powered) implement types only.
+    rotor_mechanical_resistance: Optional[Decimal] = Field(default=None, ge=0)
+    rotor_efficiency: Optional[Decimal] = Field(default=None, ge=0.25, le=0.45)
+    rotor_pto_power: Optional[Decimal] = Field(default=None, gt=0)
+    rotor_speed: Optional[Decimal] = Field(default=None, gt=0)
+    rotor_dynamic_vertical_force: Optional[Decimal] = Field(default=None)
 
     is_library: bool = False
 
@@ -55,6 +65,14 @@ class ImplementUpdate(BaseModel):
     preset_speed_kmh: Optional[float] = None
     preset_depth_cm: Optional[float] = None
     preset_gearbox_temp_max_c: Optional[float] = None
+
+    configuration: Optional[DiscHarrowConfiguration] = None
+
+    rotor_mechanical_resistance: Optional[Decimal] = Field(default=None, ge=0)
+    rotor_efficiency: Optional[Decimal] = Field(default=None, ge=0.25, le=0.45)
+    rotor_pto_power: Optional[Decimal] = Field(default=None, gt=0)
+    rotor_speed: Optional[Decimal] = Field(default=None, gt=0)
+    rotor_dynamic_vertical_force: Optional[Decimal] = None
 
 
 class ImplementRead(UUIDResponse, Timestamped, ImplementBase):

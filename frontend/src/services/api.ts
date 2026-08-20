@@ -1,6 +1,7 @@
 import axios, { isAxiosError } from 'axios';
 import { Platform } from 'react-native';
 
+import { NormalizedApiError, normalizeError } from './apiError';
 import { getAccessToken } from './authStorage';
 import { showSessionExpiredDialog } from './sessionExpired';
 
@@ -64,36 +65,10 @@ api.interceptors.response.use(
       showSessionExpiredDialog();
     }
 
-    const detail = err?.response?.data?.detail;
-    const fallback = err?.message ?? 'Request failed';
-
-    // FastAPI validation errors are often an array of objects with loc/msg/type.
-    let message: string;
-    if (Array.isArray(detail)) {
-      const parts = detail.map((item: any) => {
-        if (item && typeof item === 'object') {
-          const loc = Array.isArray(item.loc) ? item.loc.join('.') : '';
-          const msg = item.msg ? String(item.msg) : JSON.stringify(item);
-          return loc ? `${loc}: ${msg}` : msg;
-        }
-        return String(item);
-      });
-      message = parts.join('\n');
-    } else if (detail && typeof detail === 'object') {
-      const validationErrors = Array.isArray((detail as any).errors) ? (detail as any).errors : null;
-      if ((detail as any).status === 'validation_failed' && validationErrors) {
-        message = validationErrors
-          .map((item: any) => item?.message ?? JSON.stringify(item))
-          .join('\n');
-      } else {
-        message = JSON.stringify(detail);
-      }
-    } else if (detail != null) {
-      message = String(detail);
-    } else {
-      message = fallback;
-    }
-
-    return Promise.reject(new Error(message));
+    // Preserve the backend's error structure rather than flattening it to a string:
+    // range-validation errors must reach the form fields they belong to, and engine
+    // diagnostics must stay intact for the explainer. `NormalizedApiError` still
+    // extends Error, so existing `.message` call sites are unaffected.
+    return Promise.reject(new NormalizedApiError(normalizeError(err)));
   }
 );

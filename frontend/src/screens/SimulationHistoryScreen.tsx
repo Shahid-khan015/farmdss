@@ -1,268 +1,261 @@
-import React, { useMemo, useState } from 'react';
-import {
-  RefreshControl,
-  ScrollView,
-  View,
-  StyleSheet,
-  Pressable,
-} from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { Text, Checkbox } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 
-import { colors } from '../constants/colors';
-import { spacing, typography, borderRadius } from '../theme';
-import { Button } from '../components/common/Button';
-import { Card } from '../components/common/Card';
-import { ListEntityCard } from '../components/common/ListEntityCard';
-import { LoadingSpinner } from '../components/common/LoadingSpinner';
-import { ErrorMessage } from '../components/common/ErrorMessage';
+import { EmptyState } from '../components/common/EmptyState';
+import { ErrorState } from '../components/common/ErrorState';
+import { SkeletonCard } from '../components/common/Skeleton';
+import { SectionCard } from '../components/simulation/SectionCard';
+import { ThemedButton } from '../components/common/ThemedButton';
 import { useDeleteSimulation, useSimulations } from '../hooks/useSimulations';
+import { useTheme } from '../theme/ThemeProvider';
+import { toApiError } from '../services/apiError';
 import { fmtNum } from '../utils/formatters';
+import type { SimulationCombinationType } from '../types/simulation';
+
+/** A conventional run and a combi run should be distinguishable at a glance. */
+const MODE_BADGE: Record<
+  SimulationCombinationType,
+  { label: string; icon: keyof typeof Feather.glyphMap }
+> = {
+  single: { label: 'Conventional', icon: 'minus' },
+  passive_passive: { label: 'Combi · P+P', icon: 'layers' },
+  active_passive: { label: 'Combi · A+P', icon: 'rotate-cw' },
+};
+
+const MAX_COMPARE = 3;
 
 export function SimulationHistoryScreen() {
   const nav = useNavigation<any>();
-  const [tractorId] = useState('');
-  const [implementId] = useState('');
+  const { colors, spacing, radius, typography } = useTheme();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
 
-  const params = useMemo(
-    () => ({
-      tractor_id: tractorId.trim() || undefined,
-      implement_id: implementId.trim() || undefined,
-      limit: 50,
-      offset: 0,
-    }),
-    [tractorId, implementId]
-  );
-
-  const simsQ = useSimulations(params);
+  const simsQ = useSimulations({ limit: 50, offset: 0 });
   const del = useDeleteSimulation();
 
+  const items = simsQ.data?.items ?? [];
   const selectedIds = Object.entries(selected)
     .filter(([, value]) => value)
     .map(([id]) => id);
+  const canCompare = selectedIds.length >= 2 && selectedIds.length <= MAX_COMPARE;
 
-  const canCompare = selectedIds.length >= 2 && selectedIds.length <= 3;
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
 
   return (
-    <View style={styles.container}>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl + 64, gap: spacing.lg }}
         refreshControl={
           <RefreshControl refreshing={simsQ.isRefetching} onRefresh={() => simsQ.refetch()} />
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headerSection}>
-          <Text style={styles.headerTitle}>Simulation History</Text>
-          <Text style={styles.headerSubtitle}>
-            {simsQ.data?.items?.length || 0} simulation{simsQ.data?.items?.length !== 1 ? 's' : ''}
+        {/* Header */}
+        <View style={{ gap: spacing.xs }}>
+          <Text accessibilityRole="header" style={[typography.h2, { color: colors.textPrimary }]}>
+            Simulation History
+          </Text>
+          <Text style={[typography.body, { color: colors.textSecondary }]}>
+            {items.length} simulation{items.length !== 1 ? 's' : ''}
+            {selectedIds.length > 0 ? ` · ${selectedIds.length} selected` : ''}
           </Text>
         </View>
 
-        <View style={styles.actionsRow}>
-          <Button
+        {/* Actions */}
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          <ThemedButton
             variant="primary"
-            size="md"
             onPress={() => nav.navigate('SimulationSetup')}
-            style={styles.actionButton}
+            style={{ flex: 1 }}
+            fullWidth
           >
             New Simulation
-          </Button>
-          <Button
-            variant={canCompare ? 'secondary' : 'ghost'}
-            size="md"
+          </ThemedButton>
+          <ThemedButton
+            variant={canCompare ? 'outline' : 'ghost'}
             disabled={!canCompare}
-            onPress={() => nav.navigate('SimulationCompare', { ids: selectedIds.slice(0, 3) })}
-            style={styles.actionButton}
+            onPress={() => nav.navigate('SimulationCompare', { ids: selectedIds.slice(0, MAX_COMPARE) })}
+            style={{ flex: 1 }}
+            fullWidth
           >
             {`Compare (${selectedIds.length})`}
-          </Button>
+          </ThemedButton>
         </View>
 
         {simsQ.isLoading ? (
-          <View style={styles.centerContainer}>
-            <LoadingSpinner />
+          <View style={{ gap: spacing.md }}>
+            <SkeletonCard lines={3} />
+            <SkeletonCard lines={3} />
+            <SkeletonCard lines={3} />
           </View>
         ) : null}
 
         {simsQ.error ? (
-          <Card variant="outlined" style={styles.errorCard}>
-            <ErrorMessage message={(simsQ.error as Error).message} />
-          </Card>
+          <ErrorState error={toApiError(simsQ.error)} onRetry={() => simsQ.refetch()} />
         ) : null}
 
-        {!simsQ.isLoading && !simsQ.error && simsQ.data?.items?.length ? (
-          <View style={styles.listContainer}>
-            {simsQ.data.items.map((simulation, index) => (
-              <ListEntityCard
-                key={simulation.id}
-                title={simulation.name || 'Simulation'}
-                subtitle={new Date(simulation.created_at).toLocaleString()}
-                badge={{
-                  icon: <Feather name="activity" size={14} color={colors.primary} />,
-                  label: 'History',
-                  textColor: colors.primary,
-                  backgroundColor: `${colors.primary}15`,
-                }}
-                specs={[
-                  {
-                    icon: <Feather name="trending-down" size={16} color={colors.primary} />,
-                    text: `Slip ${fmtNum(simulation.slip, 1)}%`,
-                  },
-                  {
-                    icon: <Feather name="award" size={16} color={colors.primary} />,
-                    text: `Efficiency ${fmtNum(simulation.overall_efficiency, 1)}%`,
-                  },
-                ]}
-                actions={[
-                  {
-                    label: 'View Result',
-                    icon: <Feather name="eye" size={16} color="#FFFFFF" />,
-                    variant: 'solid',
-                    onPress: () => nav.navigate('SimulationResult', { id: simulation.id }),
-                  },
-                  {
-                    label: 'Delete',
-                    icon: <Feather name="trash-2" size={16} color="#FF4D4F" />,
-                    variant: 'danger',
-                    onPress: async () => {
-                      await del.mutateAsync(simulation.id);
-                    },
-                  },
-                ]}
-                headerAccessory={
-                  <Checkbox
-                    status={selected[simulation.id] ? 'checked' : 'unchecked'}
-                    onPress={() =>
-                      setSelected((prev) => ({
-                        ...prev,
-                        [simulation.id]: !prev[simulation.id],
-                      }))
-                    }
-                    color={colors.primary}
-                  />
-                }
-                style={[
-                  styles.simulationCard,
-                  index === simsQ.data.items.length - 1 && styles.lastCard,
-                ]}
-              />
-            ))}
+        {!simsQ.isLoading && !simsQ.error && items.length > 0 ? (
+          <View style={{ gap: spacing.md }}>
+            {items.map((simulation) => {
+              const mode = (simulation.combination_type ?? 'single') as SimulationCombinationType;
+              const badge = MODE_BADGE[mode];
+              const isSelected = !!selected[simulation.id];
+
+              return (
+                <SectionCard key={simulation.id} compact>
+                  <View style={styles.rowTop}>
+                    <Pressable
+                      onPress={() => toggleSelected(simulation.id)}
+                      style={styles.rowTopLeft}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: isSelected }}
+                      accessibilityLabel={`Select ${simulation.name || 'simulation'} for comparison`}
+                    >
+                      <Checkbox
+                        status={isSelected ? 'checked' : 'unchecked'}
+                        onPress={() => toggleSelected(simulation.id)}
+                        color={colors.primary}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          numberOfLines={1}
+                          style={[typography.h5, { color: colors.textPrimary }]}
+                        >
+                          {simulation.name || 'Simulation'}
+                        </Text>
+                        <Text style={[typography.caption, { color: colors.textTertiary }]}>
+                          {new Date(simulation.created_at).toLocaleString()}
+                        </Text>
+                      </View>
+                    </Pressable>
+
+                    <View
+                      style={[
+                        styles.badge,
+                        { backgroundColor: colors.primarySurface, borderRadius: radius.full },
+                      ]}
+                    >
+                      <Feather name={badge.icon} size={12} color={colors.primary} />
+                      <Text style={[typography.labelSmall, { color: colors.primary }]}>
+                        {badge.label}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
+                    <View style={styles.stat}>
+                      <Feather name="trending-down" size={14} color={colors.textSecondary} />
+                      <Text style={[typography.bodySmall, { color: colors.textSecondary }]}>
+                        Slip {fmtNum(simulation.slip, 1)}%
+                      </Text>
+                    </View>
+                    <View style={styles.stat}>
+                      <Feather name="award" size={14} color={colors.textSecondary} />
+                      <Text style={[typography.bodySmall, { color: colors.textSecondary }]}>
+                        Efficiency {fmtNum(simulation.overall_efficiency, 1)}%
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.actionsRow}>
+                    <ThemedButton
+                      size="sm"
+                      variant="primary"
+                      onPress={() => nav.navigate('SimulationResult', { id: simulation.id })}
+                      style={{ flex: 1 }}
+                      fullWidth
+                    >
+                      View
+                    </ThemedButton>
+                    <ThemedButton
+                      size="sm"
+                      variant="outline"
+                      onPress={() =>
+                        nav.navigate('SimulationSetup', { prefillFromSimulationId: simulation.id })
+                      }
+                      style={{ flex: 1 }}
+                      fullWidth
+                    >
+                      Re-run
+                    </ThemedButton>
+                    <ThemedButton
+                      size="sm"
+                      variant="destructive"
+                      loading={del.isPending && del.variables === simulation.id}
+                      onPress={() => del.mutate(simulation.id)}
+                      style={{ flex: 1 }}
+                      fullWidth
+                    >
+                      Delete
+                    </ThemedButton>
+                  </View>
+                </SectionCard>
+              );
+            })}
           </View>
         ) : null}
 
-        {!simsQ.isLoading && !simsQ.error && !simsQ.data?.items?.length ? (
-          <View style={styles.emptyStateContainer}>
-            <View style={styles.emptyIconWrapper}>
-              <Feather name="activity" size={48} color={colors.muted} />
-            </View>
-            <Text style={styles.emptyTitle}>No Simulations Found</Text>
-            <Text style={styles.emptyDescription}>
-              Run a new simulation to get started
-            </Text>
-            <Button
-              variant="primary"
-              size="md"
-              onPress={() => nav.navigate('SimulationSetup')}
-              style={styles.emptyActionButton}
-            >
-              Create New Simulation
-            </Button>
-          </View>
+        {!simsQ.isLoading && !simsQ.error && items.length === 0 ? (
+          <EmptyState
+            icon="activity"
+            title="No Simulations Found"
+            description="Run a new simulation to get started."
+            actionLabel="Create New Simulation"
+            onAction={() => nav.navigate('SimulationSetup')}
+          />
         ) : null}
       </ScrollView>
 
       <Pressable
         onPress={() => nav.navigate('SimulationSetup')}
-        style={styles.fab}
+        style={[styles.fab, { backgroundColor: colors.primary }]}
         accessible
         accessibilityLabel="Create new simulation"
         accessibilityRole="button"
       >
-        <Feather name="plus" size={24} color={colors.surface} />
+        <Feather name="plus" size={24} color={colors.textOnAccent} />
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  rowTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  rowTopLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
-    backgroundColor: colors.background,
+    gap: 4,
   },
-  scrollContent: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.xxxl,
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  headerSection: {
-    marginBottom: spacing.xl,
+  statsRow: {
+    flexDirection: 'row',
+    gap: 20,
+    borderTopWidth: 1,
+    paddingTop: 10,
   },
-  headerTitle: {
-    ...typography.h2,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  headerSubtitle: {
-    ...typography.body,
-    color: colors.muted,
+  stat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   actionsRow: {
     flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  actionButton: {
-    flex: 1,
-  },
-  centerContainer: {
-    paddingVertical: spacing.xxxl,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorCard: {
-    marginBottom: spacing.lg,
-  },
-  listContainer: {
-    gap: spacing.md,
-  },
-  simulationCard: {
-    marginBottom: 0,
-    marginHorizontal: 0,
-  },
-  lastCard: {
-    marginBottom: spacing.lg,
-  },
-  emptyStateContainer: {
-    paddingVertical: spacing.xxxl,
-    paddingHorizontal: spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyIconWrapper: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.lg,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  emptyTitle: {
-    ...typography.h4,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  emptyDescription: {
-    ...typography.body,
-    color: colors.muted,
-    textAlign: 'center',
-    marginBottom: spacing.xl,
-  },
-  emptyActionButton: {
-    minWidth: 240,
+    gap: 8,
   },
   fab: {
     position: 'absolute',
@@ -271,7 +264,6 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 18,
-    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 5,

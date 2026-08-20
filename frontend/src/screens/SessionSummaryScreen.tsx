@@ -600,7 +600,7 @@ export function SessionSummaryScreen() {
       <Card variant="elevated" spacing="comfortable" style={styles.costCard}>
         <View style={styles.costHeaderRow}>
           <View style={styles.costHeaderLeft}>
-            <Feather name="calculator" size={16} color={colors.success} />
+            <Feather name="percent" size={16} color={colors.success} />
             <Text style={styles.sectionLabel}>Operation Charges</Text>
           </View>
           <View style={styles.operationPill}>

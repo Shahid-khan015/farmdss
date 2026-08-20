@@ -179,6 +179,12 @@ export interface OperationChargeUpdateInput {
   charge_per_hour?: number | null;
 }
 
+export interface FieldObservationResponse extends FieldObservationCreate {
+  id: string;
+  session_id: string;
+  recorded_at: string;
+}
+
 export interface FieldObservationCreate {
   obs_type: 'soil_moisture' | 'cone_index';
   value: number;

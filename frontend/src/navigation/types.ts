@@ -1,3 +1,23 @@
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+
+import type { Implement } from '../types/implement';
+import type { Tractor } from '../types/tractor';
+
+/**
+ * Optional seed for the simulation wizard. Both ids are pre-selections made from a
+ * tractor or implement detail screen; the wizard still requires the full flow.
+ */
+export type SimulationSetupParams =
+  | {
+      tractorId?: string;
+      implementId?: string;
+      /** Seed the wizard from an existing simulation ("Re-run"). */
+      prefillFromSimulationId?: string;
+    }
+  | undefined;
+
 export type IoTStackParamList = {
   IoTDashboard: undefined;
   IoTMap: undefined;
@@ -42,9 +62,9 @@ export type TractorStackParamList = {
   TractorList: undefined;
   TractorDetail: { id: string };
   TractorForm:
-    | { id?: string; initial?: any; source?: 'library' | 'custom' }
+    | { id?: string; initial?: Partial<Tractor>; source?: 'library' | 'custom' }
     | undefined;
-  SimulationSetup: { tractorId?: string; implementId?: string } | undefined;
+  SimulationSetup: SimulationSetupParams;
   SimulationResult: { id: string };
 };
 
@@ -52,9 +72,9 @@ export type ImplementStackParamList = {
   ImplementList: undefined;
   ImplementDetail: { id: string };
   ImplementForm:
-    | { id?: string; initial?: any; source?: 'library' | 'custom' }
+    | { id?: string; initial?: Partial<Implement>; source?: 'library' | 'custom' }
     | undefined;
-  SimulationSetup: { tractorId?: string; implementId?: string } | undefined;
+  SimulationSetup: SimulationSetupParams;
   SimulationResult: { id: string };
 };
 
@@ -62,5 +82,17 @@ export type SimulationStackParamList = {
   SimulationHistory: undefined;
   SimulationResult: { id: string };
   SimulationCompare: { ids: string[] };
-  SimulationSetup: { tractorId?: string; implementId?: string } | undefined;
+  SimulationSetup: SimulationSetupParams;
 };
+
+/**
+ * Navigation available to the simulation screens.
+ *
+ * They move within their own stack and also jump to the equipment tabs when the
+ * user has nothing to simulate with, so the type is the composition of both rather
+ * than either alone.
+ */
+export type SimulationScreenNavigation = CompositeNavigationProp<
+  NativeStackNavigationProp<SimulationStackParamList>,
+  BottomTabNavigationProp<RootTabParamList>
+>;

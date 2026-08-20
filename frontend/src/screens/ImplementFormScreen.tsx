@@ -11,7 +11,17 @@ import { Feather } from '@expo/vector-icons';
 
 import { colors } from '../constants/colors';
 import { spacing, typography, borderRadius } from '../theme';
-import type { ImplementType } from '../constants/enums';
+import {
+  ACTIVE_IMPLEMENT_TYPES,
+  DISC_HARROW_CONFIGURATIONS,
+  PASSIVE_IMPLEMENT_TYPES,
+  TILLAGE_STAGE_LABEL,
+  isActiveImplement,
+  tillageStageOf,
+  type DiscHarrowConfiguration,
+  type ImplementType,
+} from '../constants/enums';
+import { ROTOR_EFFICIENCY_RANGE } from '../utils/dssBands';
 import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
 import { Card } from '../components/common/Card';
@@ -20,6 +30,7 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ErrorMessage } from '../components/common/ErrorMessage';
 import { useImplement, useUpsertImplement } from '../hooks/useImplements';
 import { required, toNumber } from '../utils/validators';
+import { INPUT_RANGES } from '../utils/dssBands';
 
 export function ImplementFormScreen() {
   const nav = useNavigation<any>();
@@ -42,9 +53,18 @@ export function ImplementFormScreen() {
   const [a, setA] = useState('');
   const [b, setB] = useState('');
   const [c, setC] = useState('');
+  const [configuration, setConfiguration] = useState<DiscHarrowConfiguration | null>(null);
+  const [rotorDa, setRotorDa] = useState('');
+  const [rotorEta, setRotorEta] = useState('');
+  const [rotorPto, setRotorPto] = useState('');
+  const [rotorSpeed, setRotorSpeed] = useState('');
 const [touched, setTouched] = useState({
   name: false,
 });
+
+  const isPowered = isActiveImplement(implementType);
+  const supportsConfiguration =
+    implementType === 'Disc Harrow' || implementType === 'Disc Harrow (Powered)';
 
   useEffect(() => {
     const i = id ? impQ.data : initial;
@@ -60,29 +80,89 @@ const [touched, setTouched] = useState({
     setA(i.asae_param_a?.toString() ?? '');
     setB(i.asae_param_b?.toString() ?? '');
     setC(i.asae_param_c?.toString() ?? '');
+    setConfiguration(i.configuration ?? null);
+    setRotorDa(i.rotor_mechanical_resistance?.toString() ?? '');
+    setRotorEta(i.rotor_efficiency?.toString() ?? '');
+    setRotorPto(i.rotor_pto_power?.toString() ?? '');
+    setRotorSpeed(i.rotor_speed?.toString() ?? '');
   }, [id, initial, impQ.data]);
+
+  // Configuration is only meaningful for disc harrows.
+  useEffect(() => {
+    if (!supportsConfiguration && configuration !== null) setConfiguration(null);
+  }, [supportsConfiguration, configuration]);
 
   const errors = useMemo(() => {
     const e: Record<string, string | null> = {};
     e.name = required(name.trim(), 'Name');
+
+    // `toNumber('')` is 0, not null, so an empty field must be detected from the
+    // raw string — otherwise a blank input silently reads as 0 and trips the
+    // range checks below with a misleading "out of range" message.
+    const widthText = width.trim();
+    if (widthText !== '') {
+      // Width outside the backend's accepted band makes every simulation fail
+      // with a 422, so it is caught here rather than at run time.
+      const widthValue = toNumber(widthText);
+      const { min, max, unit } = INPUT_RANGES.implement_width;
+      if (widthValue !== null && (widthValue < min || widthValue > max)) {
+        e.width = `Simulations require a width between ${min} and ${max} ${unit}.`;
+      }
+    } else if (!isPowered) {
+      // Width feeds the passive draft equation and is required for those tools.
+      // A rotor's working width is not a DSS input, so powered tools may omit it.
+      e.width = 'Width is required';
+    }
+
+    if (isPowered) {
+      // Without all four, the implement cannot fill the rotor slot of an
+      // active-passive run: it would save "successfully" and then be
+      // unselectable there. Catch it at creation instead.
+      e.rotorDa = required(rotorDa.trim(), 'Mechanical resistance');
+      e.rotorPto = required(rotorPto.trim(), 'PTO power draw');
+      e.rotorSpeed = required(rotorSpeed.trim(), 'Rotor speed');
+
+      const etaText = rotorEta.trim();
+      if (etaText === '') {
+        e.rotorEta = 'Rotor efficiency is required';
+      } else {
+        const eta = toNumber(etaText);
+        const { min, max } = ROTOR_EFFICIENCY_RANGE;
+        if (eta !== null && (eta < min || eta > max)) {
+          e.rotorEta = `Rotor efficiency must be between ${min} and ${max}.`;
+        }
+      }
+    }
     return e;
-  }, [name]);
+  }, [name, width, isPowered, rotorDa, rotorEta, rotorPto, rotorSpeed]);
 
   const canSubmit = Object.values(errors).every((v) => !v) && !saving;
 
   const handleSave = async () => {
+    // `toNumber('')` is 0, so a blank optional field would otherwise be stored as
+    // a real 0 — which reads as "present" to the readiness check and produces
+    // silently wrong results instead of an honest "not set".
+    const numOrNull = (text: string) => (text.trim() === '' ? null : toNumber(text));
+
     const payload: any = {
       name: name.trim(),
       manufacturer: manufacturer.trim() || null,
       implement_type: implementType,
       is_library: false,
-      width: toNumber(width),
-      weight: toNumber(weight),
-      cg_distance_from_hitch: toNumber(cg),
-      vertical_horizontal_ratio: toNumber(vh),
-      asae_param_a: toNumber(a),
-      asae_param_b: toNumber(b),
-      asae_param_c: toNumber(c),
+      width: numOrNull(width),
+      weight: numOrNull(weight),
+      cg_distance_from_hitch: numOrNull(cg),
+      vertical_horizontal_ratio: numOrNull(vh),
+      configuration: supportsConfiguration ? configuration : null,
+      // Powered tools never run through the DSS passive-draft equation, so ASAE
+      // A/B/C are not collected for them; rotor specs are sent instead.
+      asae_param_a: isPowered ? null : numOrNull(a),
+      asae_param_b: isPowered ? null : numOrNull(b),
+      asae_param_c: isPowered ? null : numOrNull(c),
+      rotor_mechanical_resistance: isPowered ? numOrNull(rotorDa) : null,
+      rotor_efficiency: isPowered ? numOrNull(rotorEta) : null,
+      rotor_pto_power: isPowered ? numOrNull(rotorPto) : null,
+      rotor_speed: isPowered ? numOrNull(rotorSpeed) : null,
     };
 
     if (!id) {
@@ -125,16 +205,17 @@ const [touched, setTouched] = useState({
 
       {/* Basic Information Section */}
       <CollapsibleSection title="Basic Information" icon="info" defaultExpanded>
-       <Input
-  label="Implement Name"
-  placeholder="e.g., Plough #1"
-  value={name}
-  onChangeText={setName}
-  onBlur={() => setTouched(t => ({ ...t, name: true }))}
-  error={touched.name && !!errors.name}
-  helperText={touched.name ? errors.name : undefined}
-  containerStyle={styles.field}
-/>
+        <Input
+          label="Implement Name"
+          required
+          placeholder="e.g., Plough #1"
+          value={name}
+          onChangeText={setName}
+          onBlur={() => setTouched((t) => ({ ...t, name: true }))}
+          error={touched.name && !!errors.name}
+          helperText={touched.name ? errors.name ?? undefined : undefined}
+          containerStyle={styles.field}
+        />
 
         <Input
           label="Manufacturer"
@@ -144,97 +225,247 @@ const [touched, setTouched] = useState({
           containerStyle={styles.field}
         />
 
-        {/* Implement Type Selector */}
+        {/* Implement Type Selector — grouped by power class, matching the DSS taxonomy */}
         <Text style={styles.fieldLabel}>Implement Type</Text>
+
+        <Text style={styles.groupLabel}>Passive · conventional tillage</Text>
         <View style={styles.typeContainer}>
-          {(['MB Plough', 'Disc Plough', 'Cultivator', 'Disc Harrow'] as const).map((type) => (
-            <Pressable
-              key={type}
-              onPress={() => setImplementType(type as ImplementType)}
-              style={[
-                styles.typeButton,
-                implementType === type && styles.typeButtonActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.typeButtonText,
-                  implementType === type && styles.typeButtonTextActive,
-                ]}
+          {PASSIVE_IMPLEMENT_TYPES.map((type) => {
+            const stage = tillageStageOf(type);
+            const selected = implementType === type;
+            return (
+              <Pressable
+                key={type}
+                onPress={() => setImplementType(type)}
+                style={[styles.typeButton, selected && styles.typeButtonActive]}
               >
-                {type}
-              </Text>
-            </Pressable>
-          ))}
+                <Text style={[styles.typeButtonText, selected && styles.typeButtonTextActive]}>
+                  {type}
+                </Text>
+                {stage && (
+                  <Text style={[styles.typeButtonHint, selected && styles.typeButtonHintActive]}>
+                    {TILLAGE_STAGE_LABEL[stage]}
+                  </Text>
+                )}
+              </Pressable>
+            );
+          })}
         </View>
+
+        <Text style={styles.groupLabel}>Active · PTO-powered</Text>
+        <View style={styles.typeContainer}>
+          {ACTIVE_IMPLEMENT_TYPES.map((type) => {
+            const selected = implementType === type;
+            return (
+              <Pressable
+                key={type}
+                onPress={() => setImplementType(type)}
+                style={[styles.typeButton, selected && styles.typeButtonActive]}
+              >
+                <Text style={[styles.typeButtonText, selected && styles.typeButtonTextActive]}>
+                  {type}
+                </Text>
+                <Text style={[styles.typeButtonHint, selected && styles.typeButtonHintActive]}>
+                  Rotor slot
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {isPowered && (
+          <View style={styles.explainer}>
+            <Feather name="info" size={14} color={colors.accent} />
+            <Text style={styles.explainerText}>
+              Powered tools are used as the driven rotor of an Active + Passive combi simulation.
+              They are not run through the passive draft equation, so ASAE parameters are not
+              required — the rotor specs below are used instead.
+            </Text>
+          </View>
+        )}
+
+        {supportsConfiguration && (
+          <>
+            <Text style={styles.fieldLabel}>Disc arrangement</Text>
+            <View style={styles.typeContainer}>
+              {DISC_HARROW_CONFIGURATIONS.map((cfg) => {
+                const selected = configuration === cfg;
+                return (
+                  <Pressable
+                    key={cfg}
+                    onPress={() => setConfiguration(selected ? null : cfg)}
+                    style={[styles.typeButton, selected && styles.typeButtonActive]}
+                  >
+                    <Text style={[styles.typeButtonText, selected && styles.typeButtonTextActive]}>
+                      {cfg}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.footnote}>
+              Descriptive only — the DSS gives no distinct coefficients for Tandem vs Offset, so
+              this does not change any result.
+            </Text>
+          </>
+        )}
       </CollapsibleSection>
 
-      {/* Implement Properties Section */}
-      <CollapsibleSection title="Implement Properties" icon="square" defaultExpanded={false}>
+      {/* Geometry & weight — all required by the DSS draft and axle-load model */}
+      <CollapsibleSection title="Geometry & Weight" icon="square" defaultExpanded>
         <Input
-          label="Width"
-          placeholder="m"
+          label="Working width"
+          required
+          unit="m"
+          labelHint={`${INPUT_RANGES.implement_width.min}–${INPUT_RANGES.implement_width.max} m`}
           value={width}
           onChangeText={setWidth}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>m</Text>}
+          error={!!errors.width}
+          helperText={errors.width ?? 'Cutting width used for draft and field capacity.'}
           containerStyle={styles.field}
         />
         <Input
           label="Weight"
-          placeholder="kg"
+          required
+          unit="kg"
           value={weight}
           onChangeText={setWeight}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>kg</Text>}
+          helperText="Mass carried on the hitch, used in the axle-load balance."
           containerStyle={styles.field}
         />
         <Input
-          label="CG Distance from Hitch"
-          placeholder="m"
+          label="CG distance from hitch"
+          required
+          unit="m"
           value={cg}
           onChangeText={setCg}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>m</Text>}
+          helperText="Horizontal distance from the hitch point to the implement's centre of gravity."
           containerStyle={styles.field}
         />
         <Input
-          label="Vertical/Horizontal Ratio"
-          placeholder="ratio"
+          label="Vertical/horizontal ratio"
           value={vh}
           onChangeText={setVh}
           keyboardType="decimal-pad"
+          labelHint="Not used"
+          helperText="Superseded — the engine uses the DSS Py/D table for this implement type instead. Kept for older records."
           containerStyle={styles.field}
         />
       </CollapsibleSection>
 
-      {/* ASAE Parameters Section */}
-      <CollapsibleSection title="ASAE Parameters" icon="settings" defaultExpanded={false}>
-        <Input
-          label="Parameter A"
-          placeholder="value"
-          value={a}
-          onChangeText={setA}
-          keyboardType="decimal-pad"
-          containerStyle={styles.field}
-        />
-        <Input
-          label="Parameter B"
-          placeholder="value"
-          value={b}
-          onChangeText={setB}
-          keyboardType="decimal-pad"
-          containerStyle={styles.field}
-        />
-        <Input
-          label="Parameter C"
-          placeholder="value"
-          value={c}
-          onChangeText={setC}
-          keyboardType="decimal-pad"
-          containerStyle={styles.field}
-        />
-      </CollapsibleSection>
+      {/* ASAE draft parameters — passive tools only */}
+      {!isPowered && (
+        <CollapsibleSection title="ASAE Draft Parameters" icon="settings" defaultExpanded>
+          <View style={styles.explainer}>
+            <Feather name="info" size={14} color={colors.accent} />
+            <Text style={styles.explainerText}>
+              Machine constants from ASABE D497 that describe how this implement's draft grows with
+              speed: draft ∝ A + B×speed + C×speed². Take them from the standard's table for your
+              implement type — they are not something to estimate.
+            </Text>
+          </View>
+          <Input
+            label="Parameter A"
+            required
+            labelHint="Constant term"
+            value={a}
+            onChangeText={setA}
+            keyboardType="decimal-pad"
+            containerStyle={styles.field}
+          />
+          <Input
+            label="Parameter B"
+            required
+            labelHint="× speed"
+            value={b}
+            onChangeText={setB}
+            keyboardType="decimal-pad"
+            containerStyle={styles.field}
+          />
+          <Input
+            label="Parameter C"
+            required
+            labelHint="× speed²"
+            value={c}
+            onChangeText={setC}
+            keyboardType="decimal-pad"
+            containerStyle={styles.field}
+          />
+        </CollapsibleSection>
+      )}
+
+      {/* Rotor specifications — powered tools only (DSS Section 5) */}
+      {isPowered && (
+        <CollapsibleSection title="Rotor Specifications" icon="rotate-cw" defaultExpanded>
+          <View style={styles.explainer}>
+            <Feather name="info" size={14} color={colors.accent} />
+            <Text style={styles.explainerText}>
+              Saved here so this rotor can be picked directly in an Active + Passive simulation
+              instead of retyping its specs each run. Individual values can still be overridden per
+              simulation.
+            </Text>
+          </View>
+          <Input
+            label="Mechanical resistance"
+            required
+            unit="N"
+            labelHint="Da"
+            value={rotorDa}
+            onChangeText={setRotorDa}
+            keyboardType="decimal-pad"
+            error={!!errors.rotorDa}
+            helperText={
+              errors.rotorDa ??
+              "The rotor's own frame/bearing drag, independent of the thrust it develops."
+            }
+            containerStyle={styles.field}
+          />
+          <Input
+            label="Rotor efficiency"
+            required
+            labelHint={`ηr · ${ROTOR_EFFICIENCY_RANGE.min}–${ROTOR_EFFICIENCY_RANGE.max}`}
+            value={rotorEta}
+            onChangeText={setRotorEta}
+            keyboardType="decimal-pad"
+            error={!!errors.rotorEta}
+            helperText={
+              errors.rotorEta ?? 'Share of PTO power converted into useful forward thrust.'
+            }
+            containerStyle={styles.field}
+          />
+          <Input
+            label="PTO power draw"
+            required
+            unit="kW"
+            labelHint="P_PTO"
+            value={rotorPto}
+            onChangeText={setRotorPto}
+            keyboardType="decimal-pad"
+            error={!!errors.rotorPto}
+            helperText={
+              errors.rotorPto ?? 'Power the rotor takes from the engine via the PTO.'
+            }
+            containerStyle={styles.field}
+          />
+          <Input
+            label="Rotor speed"
+            required
+            unit="rpm"
+            labelHint="N"
+            value={rotorSpeed}
+            onChangeText={setRotorSpeed}
+            keyboardType="decimal-pad"
+            error={!!errors.rotorSpeed}
+            helperText={
+              errors.rotorSpeed ?? 'Used for the PTO reaction moment, MPTO = 9550 × P_PTO / N.'
+            }
+            containerStyle={styles.field}
+          />
+        </CollapsibleSection>
+      )}
 
       {/* Error Messages */}
       {create.error && (
@@ -351,9 +582,47 @@ const styles = StyleSheet.create({
   typeButtonText: {
     ...typography.label,
     color: colors.muted,
+    textAlign: 'center',
   },
   typeButtonTextActive: {
     color: colors.primary,
+  },
+  typeButtonHint: {
+    ...typography.labelSmall,
+    color: colors.muted,
+    opacity: 0.75,
+    marginTop: 2,
+  },
+  typeButtonHintActive: {
+    color: colors.primary,
+    opacity: 0.9,
+  },
+  groupLabel: {
+    ...typography.labelSmall,
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  footnote: {
+    ...typography.bodySmall,
+    color: colors.muted,
+    marginTop: spacing.sm,
+  },
+  explainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: '#E2EEF7',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  explainerText: {
+    ...typography.bodySmall,
+    color: '#154663',
+    flex: 1,
   },
   unit: {
     ...typography.bodySmall,

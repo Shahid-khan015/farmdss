@@ -27,7 +27,9 @@ export function IoTMapScreen() {
     <View style={styles.container}>
       <Card variant="elevated" spacing="comfortable" style={styles.card}>
         <Text style={styles.title}>GPS (position_tracking)</Text>
-        {error ? <Text style={styles.err}>{error.message}</Text> : null}
+        {error ? (
+          <Text style={styles.err}>{typeof error === 'string' ? error : error.message}</Text>
+        ) : null}
         {isLoading ? <Text style={styles.muted}>Loading…</Text> : null}
         <Text style={styles.row}>
           <Text style={styles.k}>Lat </Text>

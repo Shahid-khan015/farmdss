@@ -1,4 +1,4 @@
-import type { ImplementType } from '../constants/enums';
+import type { DiscHarrowConfiguration, ImplementType } from '../constants/enums';
 
 export type Implement = {
   id: string;
@@ -17,6 +17,17 @@ export type Implement = {
   preset_speed_kmh?: number | null;
   preset_depth_cm?: number | null;
   preset_gearbox_temp_max_c?: number | null;
+
+  /** Descriptive disc-harrow arrangement; does not affect the calculations. */
+  configuration?: DiscHarrowConfiguration | null;
+
+  /** Rotor specs — populated only for ACTIVE (PTO-powered) implement types. */
+  rotor_mechanical_resistance?: number | null;
+  rotor_efficiency?: number | null;
+  rotor_pto_power?: number | null;
+  rotor_speed?: number | null;
+  rotor_dynamic_vertical_force?: number | null;
+
   is_library: boolean;
   created_at: string;
   updated_at: string;

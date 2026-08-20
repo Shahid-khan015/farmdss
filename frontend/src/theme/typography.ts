@@ -1,4 +1,15 @@
-import { TextStyle } from 'react-native';
+import { Platform, TextStyle } from 'react-native';
+
+/**
+ * 'Menlo' only exists on iOS; on Android it silently falls back to the default sans,
+ * so engineering values rendered in `mono`/`monoLarge` lost their fixed advance width
+ * in the Android build. Mirrors `numericTextStyle` in `ThemeProvider`.
+ */
+const monoFontFamily = Platform.select({
+  ios: 'Menlo',
+  android: 'monospace',
+  default: 'ui-monospace',
+});
 
 export const typography = {
   // Headings
@@ -50,13 +61,13 @@ export const typography = {
     fontSize: 14,
     fontWeight: '400',
     lineHeight: 21,
-    fontFamily: 'Menlo',
+    fontFamily: monoFontFamily,
   } as TextStyle,
   monoLarge: {
     fontSize: 20,
     fontWeight: '500',
     lineHeight: 28,
-    fontFamily: 'Menlo',
+    fontFamily: monoFontFamily,
   } as TextStyle,
 
   // Labels

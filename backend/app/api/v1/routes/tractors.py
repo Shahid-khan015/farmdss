@@ -46,6 +46,7 @@ def list_tractors(
         manufacturer=manufacturer,
         drive_mode=drive_mode,
         is_library=effective_is_library,
+        current_user_id=current_user.id,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -104,6 +105,13 @@ def update_tractor(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Library tractors cannot be modified",
         )
+    # owner_id is None for a handful of legacy rows predating ownership
+    # enforcement; treat those as still editable rather than locking them out.
+    if tractor.owner_id is not None and tractor.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only modify your own tractors",
+        )
     tractor_crud.update(db, db_obj=tractor, obj_in=payload)
     return tractor_crud.get_with_tires(db, id=id)
 
@@ -121,6 +129,11 @@ def delete_tractor(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Library tractors cannot be deleted",
+        )
+    if obj.owner_id is not None and obj.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own tractors",
         )
     tractor_crud.remove(db, id=id)
     return {"ok": True, "id": id}

@@ -11,7 +11,12 @@ import {
 import { TextInput } from 'react-native-paper';
 import { spacing, typography, borderRadius, colors } from '../../theme';
 
-interface InputProps extends RNTextInputProps {
+/**
+ * React Native widens `selectionColor`/`cursorColor` to `ColorValue | null`, while
+ * Paper's TextInput only accepts `string | undefined`. Omitting them keeps the prop
+ * spread type-safe; neither is used by this component.
+ */
+interface InputProps extends Omit<RNTextInputProps, 'selectionColor' | 'cursorColor'> {
   label?: string;
   error?: boolean;
   helperText?: string;
@@ -20,6 +25,15 @@ interface InputProps extends RNTextInputProps {
   /** react-native-paper ``TextInput`` adornment (e.g. ``TextInput.Icon``). */
   right?: React.ReactNode;
   containerStyle?: StyleProp<ViewStyle>;
+  /**
+   * Persistent unit suffix, e.g. ``kW``. Rendered as an affix rather than inside
+   * ``placeholder`` so the unit stays visible once the field has a value.
+   */
+  unit?: string;
+  /** Optional trailing note beside the label, e.g. an accepted range. */
+  labelHint?: string;
+  /** Marks the field as required for assistive technology and adds a visual cue. */
+  required?: boolean;
 }
 
 export function Input({
@@ -30,6 +44,9 @@ export function Input({
   rightIcon,
   right,
   containerStyle,
+  unit,
+  labelHint,
+  required,
   onFocus: onFocusProp,
   onBlur: onBlurProp,
   editable = true,
@@ -64,18 +81,36 @@ export function Input({
     outputRange: [error ? colors.danger : '#E5E7EB', colors.primary],
   });
 
+  // A unit affix and a custom `right` adornment would collide in the same slot.
+  const rightAdornment =
+    right ?? (unit ? <TextInput.Affix text={unit} textStyle={styles.unitAffix} /> : undefined);
+
+  const composedLabel = [label, required ? '(required)' : null, unit ? `in ${unit}` : null]
+    .filter(Boolean)
+    .join(' ');
+  const accessibilityLabel = props.accessibilityLabel ?? (composedLabel || undefined);
+
   return (
     <View style={[styles.container, containerStyle]}>
-      {label && <Text style={styles.label}>{label}</Text>}
+      {label ? (
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>
+            {label}
+            {required ? <Text style={styles.requiredMark}> *</Text> : null}
+          </Text>
+          {labelHint ? <Text style={styles.labelHint}>{labelHint}</Text> : null}
+        </View>
+      ) : null}
       <View style={[styles.inputWrapper, isFocused && styles.inputWrapperFocused]}>
         {icon && <View style={styles.leftIcon}>{icon}</View>}
         <TextInput
           mode="outlined"
           editable={editable}
+          accessibilityLabel={accessibilityLabel}
           {...props}
           onFocus={handleFocus}
           onBlur={handleBlur}
-          right={right}
+          right={rightAdornment}
           style={[
             styles.input,
             { opacity: editable ? 1 : 0.5 },
@@ -84,10 +119,13 @@ export function Input({
           activeOutlineColor={colors.primary}
           outlineColor={error ? colors.danger : '#E5E7EB'}
         />
-        {rightIcon && !right ? <View style={styles.rightIcon}>{rightIcon}</View> : null}
+        {rightIcon && !rightAdornment ? <View style={styles.rightIcon}>{rightIcon}</View> : null}
       </View>
       {helperText && (
-        <Text style={[styles.helperText, error && styles.helperTextError]}>
+        <Text
+          accessibilityLiveRegion={error ? 'polite' : 'none'}
+          style={[styles.helperText, error && styles.helperTextError]}
+        >
           {helperText}
         </Text>
       )}
@@ -99,10 +137,28 @@ const styles = StyleSheet.create({
   container: {
     marginVertical: spacing.sm,
   },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
   label: {
     ...typography.label,
     color: colors.text,
-    marginBottom: spacing.xs,
+    flexShrink: 1,
+  },
+  labelHint: {
+    ...typography.bodySmall,
+    color: colors.muted,
+  },
+  requiredMark: {
+    color: colors.danger,
+  },
+  unitAffix: {
+    ...typography.labelSmall,
+    color: colors.muted,
   },
   inputWrapper: {
     flexDirection: 'row',

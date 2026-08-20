@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "backgroundColor": "#F4F6F4",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -22,7 +23,9 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.frontend"
+      "package": "com.anonymous.frontend",
+      "userInterfaceStyle": "light",
+      "backgroundColor": "#F4F6F4"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -32,9 +35,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "26ec47df-8e5f-4baf-930f-2cfc16c85101"
+        "projectId": "fcc5a341-bb73-46a2-a4b8-fe6e4a1ed3ee"
       }
     },
-    "owner": "soulchampion"
+    "owner": "championwhite"
   }
 }

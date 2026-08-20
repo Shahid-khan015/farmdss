@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+backend/.venv/
+.venv/
+venv/
+
+# Local SQLite fallback database (app/database.py drops to this when Postgres
+# is unreachable and DEBUG=True). Never a source of truth.
+*.db
+*.sqlite3
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+
+# Logs and editor noise
+*.log
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+
+# NOTE: .env files are deliberately NOT ignored. backend/.env and frontend/.env
+# are committed in this repo and the app depends on them being present -- see
+# CLAUDE.md ("backend/.env and frontend/.env are committed and contain
+# real-shaped config").

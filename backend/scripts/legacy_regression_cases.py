@@ -107,6 +107,7 @@ def main():
             return
 
     # Validate draft equation and direct derived equations.
+    # DSS Eq. 3.1: D = F*(A+B*S+C*S^2)*W*T -- W in m, T in cm, no divisor on depth.
     A = 100.0
     B = 50.0
     C = 10.0

@@ -303,35 +303,34 @@ export function TractorFormScreen() {
       <CollapsibleSection title="Power & Engine" icon="zap" defaultExpanded>
         <Input
           label="PTO Power"
-          placeholder="kW"
+          required
+          labelHint="> 10 kW to simulate"
           value={ptoPower}
           onChangeText={setPtoPower}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>kW</Text>}
+          unit={"kW"}
           error={!!errors.ptoPower}
-          helperText={errors.ptoPower ?? undefined}
+          helperText={errors.ptoPower ?? 'Rated PTO power. Simulations reject tractors at or below 10 kW.'}
           containerStyle={styles.field}
         />
         <Input
-          label="Rated Engine Speed"
-          placeholder="rpm"
+          label="Rated Engine Speed"
           value={ratedSpeed}
           onChangeText={setRatedSpeed}
           keyboardType="number-pad"
-          rightIcon={<Text style={styles.unit}>rpm</Text>}
+          unit={"rpm"}
           error={!!errors.ratedSpeed}
           helperText={errors.ratedSpeed ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Maximum Engine Torque"
-          placeholder="N-m"
+          label="Maximum Engine Torque"
           value={maxTorque}
           onChangeText={setMaxTorque}
           keyboardType="decimal-pad"
           error={!!errors.maxTorque}
           helperText={errors.maxTorque ?? undefined}
-          rightIcon={<Text style={styles.unit}>N·m</Text>}
+          unit={"N·m"}
           containerStyle={styles.field}
         />
       </CollapsibleSection>
@@ -339,67 +338,61 @@ export function TractorFormScreen() {
       {/* Geometry & Weight Section */}
       <CollapsibleSection title="Geometry & Weight" icon="square" defaultExpanded={false}>
         <Input
-          label="Wheelbase"
-          placeholder="m"
+          label="Wheelbase"
           value={wheelbase}
           onChangeText={setWheelbase}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>m</Text>}
+          unit={"m"}
           error={!!errors.wheelbase}
           helperText={errors.wheelbase ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Front Axle Weight"
-          placeholder="kg"
+          label="Front Axle Weight"
           value={frontAxleWeight}
           onChangeText={setFrontAxleWeight}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>kg</Text>}
+          unit={"kg"}
           error={!!errors.frontAxleWeight}
           helperText={errors.frontAxleWeight ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Rear Axle Weight"
-          placeholder="kg"
+          label="Rear Axle Weight"
           value={rearAxleWeight}
           onChangeText={setRearAxleWeight}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>kg</Text>}
+          unit={"kg"}
           error={!!errors.rearAxleWeight}
           helperText={errors.rearAxleWeight ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Hitch Distance from Rear"
-          placeholder="m"
+          label="Hitch Distance from Rear"
           value={hitchDistance}
           onChangeText={setHitchDistance}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>m</Text>}
+          unit={"m"}
           error={!!errors.hitchDistance}
           helperText={errors.hitchDistance ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="CG Distance from Rear Axle"
-          placeholder="m"
+          label="CG Distance from Rear Axle"
           value={cgFromRear}
           onChangeText={setCgFromRear}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>m</Text>}
+          unit={"m"}
           error={!!errors.cgFromRear}
           helperText={errors.cgFromRear ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Rear Wheel Rolling Radius"
-          placeholder="m"
+          label="Rear Wheel Rolling Radius"
           value={rearRollingRadius}
           onChangeText={setRearRollingRadius}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>m</Text>}
+          unit={"m"}
           error={!!errors.rearRollingRadius}
           helperText={errors.rearRollingRadius ?? undefined}
           containerStyle={styles.field}
@@ -409,23 +402,21 @@ export function TractorFormScreen() {
       {/* Powertrain Settings Section */}
       <CollapsibleSection title="Powertrain Settings" icon="settings" defaultExpanded={false}>
         <Input
-          label="Transmission Efficiency"
-          placeholder="%"
+          label="Transmission Efficiency"
           value={transEff}
           onChangeText={setTransEff}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>%</Text>}
+          unit={"%"}
           error={!!errors.transEff}
           helperText={errors.transEff ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Power Reserve"
-          placeholder="%"
+          label="Power Reserve"
           value={powerReserve}
           onChangeText={setPowerReserve}
           keyboardType="decimal-pad"
-          rightIcon={<Text style={styles.unit}>%</Text>}
+          unit={"%"}
           error={!!errors.powerReserve}
           helperText={errors.powerReserve ?? undefined}
           containerStyle={styles.field}
@@ -439,6 +430,13 @@ export function TractorFormScreen() {
         defaultExpanded={false}
         accessibilityLabel="Tire specifications, required for simulation"
       >
+        <View style={styles.tyreExplainer}>
+          <Feather name="info" size={14} color={colors.accent} />
+          <Text style={styles.tyreExplainerText}>
+            Tyre width and diameter drive the wheel-numeric that governs traction and rolling
+            resistance. A tractor without them cannot be simulated.
+          </Text>
+        </View>
         <Text style={styles.fieldLabel}>Tire Type</Text>
         <View style={styles.driveModeContainer}>
           {(['Bias Ply', 'Radial Ply'] as const).map((type) => (
@@ -464,45 +462,41 @@ export function TractorFormScreen() {
 
         <Text style={styles.subSectionTitle}>Front Tire</Text>
         <Input
-          label="Overall Diameter"
-          placeholder="mm"
+          label="Overall Diameter"
           value={frontOD}
           onChangeText={setFrontOD}
           keyboardType="number-pad"
-          rightIcon={<Text style={styles.unit}>mm</Text>}
+          unit={"mm"}
           error={!!errors.frontOD}
           helperText={errors.frontOD ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Section Width"
-          placeholder="mm"
+          label="Section Width"
           value={frontSW}
           onChangeText={setFrontSW}
           keyboardType="number-pad"
-          rightIcon={<Text style={styles.unit}>mm</Text>}
+          unit={"mm"}
           error={!!errors.frontSW}
           helperText={errors.frontSW ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Static Loaded Radius"
-          placeholder="mm"
+          label="Static Loaded Radius"
           value={frontSLR}
           onChangeText={setFrontSLR}
           keyboardType="number-pad"
-          rightIcon={<Text style={styles.unit}>mm</Text>}
+          unit={"mm"}
           error={!!errors.frontSLR}
           helperText={errors.frontSLR ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Rolling Radius"
-          placeholder="mm"
+          label="Rolling Radius"
           value={frontRR}
           onChangeText={setFrontRR}
           keyboardType="number-pad"
-          rightIcon={<Text style={styles.unit}>mm</Text>}
+          unit={"mm"}
           error={!!errors.frontRR}
           helperText={errors.frontRR ?? undefined}
           containerStyle={styles.field}
@@ -510,45 +504,41 @@ export function TractorFormScreen() {
 
         <Text style={styles.subSectionTitle}>Rear Tire</Text>
         <Input
-          label="Overall Diameter"
-          placeholder="mm"
+          label="Overall Diameter"
           value={rearOD}
           onChangeText={setRearOD}
           keyboardType="number-pad"
-          rightIcon={<Text style={styles.unit}>mm</Text>}
+          unit={"mm"}
           error={!!errors.rearOD}
           helperText={errors.rearOD ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Section Width"
-          placeholder="mm"
+          label="Section Width"
           value={rearSW}
           onChangeText={setRearSW}
           keyboardType="number-pad"
-          rightIcon={<Text style={styles.unit}>mm</Text>}
+          unit={"mm"}
           error={!!errors.rearSW}
           helperText={errors.rearSW ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Static Loaded Radius"
-          placeholder="mm"
+          label="Static Loaded Radius"
           value={rearSLR}
           onChangeText={setRearSLR}
           keyboardType="number-pad"
-          rightIcon={<Text style={styles.unit}>mm</Text>}
+          unit={"mm"}
           error={!!errors.rearSLR}
           helperText={errors.rearSLR ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Rolling Radius"
-          placeholder="mm"
+          label="Rolling Radius"
           value={rearRR}
           onChangeText={setRearRR}
           keyboardType="number-pad"
-          rightIcon={<Text style={styles.unit}>mm</Text>}
+          unit={"mm"}
           error={!!errors.rearRR}
           helperText={errors.rearRR ?? undefined}
           containerStyle={styles.field}
@@ -678,6 +668,21 @@ const styles = StyleSheet.create({
   modeButtonTextActive: {
     color: colors.primary,
   },
+  tyreExplainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: '#E2EEF7',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  tyreExplainerText: {
+    ...typography.bodySmall,
+    color: '#154663',
+    flex: 1,
+  },
+
   unit: {
     ...typography.bodySmall,
     color: colors.muted,

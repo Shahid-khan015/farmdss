@@ -65,8 +65,8 @@ export function OperatorDashboardScreen() {
   const { activeSession } = useActiveSession();
   const { session: activeSessionDetail } = useSessionDetail(activeSession?.id ?? null);
   const { sessions } = useSessions();
-  const tractorsQ = useTractors({ limit: 200, offset: 0, sort: 'name' });
-  const implementsQ = useImplements({ limit: 200, offset: 0, sort: 'name' });
+  const tractorsQ = useTractors({ limit: 100, offset: 0, sort: 'name' });
+  const implementsQ = useImplements({ limit: 100, offset: 0, sort: 'name' });
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [elapsedLabel, setElapsedLabel] = useState('0m');
   const [dismissedPopupAlertId, setDismissedPopupAlertId] = useState<string | null>(null);

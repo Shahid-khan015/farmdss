@@ -61,8 +61,7 @@ export function LoginScreen() {
   return (
     <AuthScreenLayout
       variant="split"
-      title="Welcome back"
-      subtitle="Sign in to Farm DSS"
+      title="Sign in to Farm DSS"
       footer={
         <View style={styles.footerRow}>
           <Text style={styles.footerPrompt}>Don&apos;t have an account?</Text>

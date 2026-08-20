@@ -46,7 +46,7 @@ export function FarmerDashboardScreen() {
   const { sessions } = useSessions();
   const { activeSession } = useActiveSession();
   const iot = useIoTDashboard();
-  const tractorsQ = useTractors({ limit: 200, offset: 0, sort: 'name' });
+  const tractorsQ = useTractors({ limit: 100, offset: 0, sort: 'name' });
   const [alerts, setAlerts] = useState<AlertResponse[]>([]);
   const [sidebarVisible, setSidebarVisible] = useState(false);
 

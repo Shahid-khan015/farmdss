@@ -81,7 +81,7 @@ export function SessionHistoryScreen() {
   const canStartSession = isOperator;
 
   const { sessions, isLoading, error, refetch } = useSessions({ status: statusParam });
-  const tractorsQ = useTractors({ limit: 200, offset: 0, sort: 'name' });
+  const tractorsQ = useTractors({ limit: 100, offset: 0, sort: 'name' });
 
   const tractorNameById = useMemo(() => {
     const items = tractorsQ.data?.items ?? [];
