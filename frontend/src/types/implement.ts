@@ -12,6 +12,8 @@ export type Implement = {
   asae_param_a?: number | null;
   asae_param_b?: number | null;
   asae_param_c?: number | null;
+  /** Eq. 3.1's `W` for per-tool implement classes (cultivators). */
+  number_of_tools?: number | null;
   working_width_m?: number | null;
   hitch_type?: string | null;
   preset_speed_kmh?: number | null;

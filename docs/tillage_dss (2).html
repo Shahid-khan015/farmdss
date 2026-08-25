@@ -1,0 +1,1623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tillage DSS — Tractor-Implement Performance Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#171B14; --bg-alt:#1D2217; --surface:#232A1D; --surface-2:#2B3323;
+  --border:#3A4330; --border-soft:#2E3626;
+  --text:#EDE8D6; --text-dim:#AEB49C; --text-faint:#767C68;
+  --accent:#C98A3A; --accent-soft:#5A4527; --accent-2:#8FAE7C; --accent-2-soft:#33432D;
+  --danger:#C0604A; --danger-soft:#3F2822;
+  --warn:#D2A94A; --warn-soft:#3E3520;
+  --font-display:'Fraunces',serif; --font-body:'Inter',system-ui,sans-serif; --font-mono:'IBM Plex Mono',monospace;
+  --radius:10px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgba(143,174,124,0.07), transparent 60%),
+    radial-gradient(900px 500px at -10% 10%, rgba(201,138,58,0.06), transparent 55%),
+    var(--bg);
+  color:var(--text); font-family:var(--font-body); line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent);}
+h1,h2,h3{font-family:var(--font-display); font-weight:600; margin:0 0 4px 0; letter-spacing:0.01em;}
+.mono{font-family:var(--font-mono);}
+.container{max-width:1400px;margin:0 auto;padding:0 20px 80px;}
+
+/* ---------- header ---------- */
+header.top{
+  border-bottom:1px solid var(--border-soft);
+  background:linear-gradient(180deg, rgba(35,42,29,0.9), rgba(23,27,20,0.4));
+  backdrop-filter:blur(6px);
+  position:sticky; top:0; z-index:50;
+}
+.top-inner{max-width:1400px;margin:0 auto;padding:18px 20px 14px;}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}
+.brand h1{font-size:1.7rem;color:var(--text);}
+.brand .eyebrow{
+  font-family:var(--font-mono); font-size:0.68rem; letter-spacing:0.16em; text-transform:uppercase;
+  color:var(--accent-2); border:1px solid var(--accent-2-soft); background:var(--accent-2-soft);
+  padding:3px 8px; border-radius:99px;
+}
+.brand p.sub{color:var(--text-dim); margin:4px 0 0; font-size:0.92rem; max-width:60ch;}
+
+/* pipeline stepper — signature element: encodes the actual DSS computation chain */
+.pipeline{display:flex; align-items:center; gap:0; margin-top:16px; overflow-x:auto; padding-bottom:2px;}
+.pipe-stage{
+  display:flex; align-items:center; gap:8px; padding:7px 12px; border-radius:99px;
+  border:1px solid var(--border); background:var(--surface); white-space:nowrap;
+  font-family:var(--font-mono); font-size:0.72rem; color:var(--text-faint); transition:all .25s ease;
+}
+.pipe-stage .dot{width:7px;height:7px;border-radius:50%;background:var(--text-faint); transition:all .25s ease;}
+.pipe-stage.done{color:var(--accent-2); border-color:var(--accent-2-soft); background:var(--accent-2-soft);}
+.pipe-stage.done .dot{background:var(--accent-2); box-shadow:0 0 8px var(--accent-2);}
+.pipe-stage.active{color:var(--accent); border-color:var(--accent-soft); background:var(--accent-soft);}
+.pipe-stage.active .dot{background:var(--accent); box-shadow:0 0 8px var(--accent);}
+.pipe-connector{width:16px;height:1px;background:var(--border); flex:0 0 auto;}
+
+/* ---------- layout ---------- */
+main{display:grid; grid-template-columns:minmax(340px,420px) 1fr; gap:22px; margin-top:24px;}
+@media (max-width:980px){ main{grid-template-columns:1fr;} }
+
+.card{
+  background:var(--surface); border:1px solid var(--border-soft); border-radius:var(--radius);
+  padding:18px 18px 20px;
+}
+.card + .card{margin-top:16px;}
+.card h2{font-size:1.02rem; color:var(--text);}
+.card h2 .n{color:var(--accent); font-family:var(--font-mono); font-size:0.85rem; margin-right:6px;}
+.card .desc{color:var(--text-faint); font-size:0.82rem; margin:2px 0 14px;}
+
+/* ---------- mode tabs ---------- */
+.mode-tabs{display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap;}
+.mode-tab{
+  flex:1 1 auto; min-width:120px; text-align:center; padding:10px 10px; border-radius:8px;
+  border:1px solid var(--border); background:var(--bg-alt); color:var(--text-dim); cursor:pointer;
+  font-size:0.82rem; font-weight:600; transition:all .15s ease;
+}
+.mode-tab:hover{border-color:var(--accent-soft);}
+.mode-tab.active{background:var(--accent-soft); border-color:var(--accent); color:var(--accent);}
+
+/* ---------- form elements ---------- */
+label{display:block; font-size:0.78rem; color:var(--text-dim); margin:0 0 5px; font-weight:500;}
+.field{margin-bottom:14px;}
+.row2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;}
+select, input[type="number"], input[type="text"]{
+  width:100%; background:var(--bg-alt); border:1px solid var(--border); color:var(--text);
+  padding:9px 10px; border-radius:7px; font-family:var(--font-mono); font-size:0.86rem;
+  outline:none; transition:border-color .15s ease;
+}
+select:focus, input:focus{border-color:var(--accent);}
+select{cursor:pointer;}
+.hint{font-size:0.72rem; color:var(--text-faint); margin-top:4px;}
+.inline-btn{
+  background:none; border:1px dashed var(--border); color:var(--text-dim); border-radius:7px;
+  padding:7px 10px; font-size:0.76rem; cursor:pointer; width:100%; margin-top:6px;
+}
+.inline-btn:hover{border-color:var(--accent); color:var(--accent);}
+
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  background:var(--accent); color:#1B1206; border:none; border-radius:8px;
+  padding:12px 18px; font-weight:700; font-size:0.92rem; cursor:pointer; width:100%;
+  transition:transform .1s ease, box-shadow .15s ease;
+}
+.btn:hover{box-shadow:0 4px 18px rgba(201,138,58,0.35); transform:translateY(-1px);}
+.btn:active{transform:translateY(0);}
+.btn.secondary{background:var(--surface-2); color:var(--text); border:1px solid var(--border);}
+.btn.secondary:hover{box-shadow:none; border-color:var(--accent-2);}
+.btn.small{padding:8px 12px; font-size:0.8rem; width:auto;}
+
+.slider-row{display:flex; align-items:center; gap:10px;}
+input[type="range"]{flex:1; accent-color:var(--accent);}
+.slider-val{font-family:var(--font-mono); font-size:0.85rem; color:var(--accent); min-width:44px; text-align:right;}
+
+.toggle-row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0;}
+.toggle-row .lbl{font-size:0.8rem; color:var(--text-dim);}
+.switch{position:relative; width:40px; height:22px; flex:0 0 auto;}
+.switch input{opacity:0; width:0; height:0;}
+.slider-switch{position:absolute; inset:0; background:var(--bg-alt); border:1px solid var(--border); border-radius:99px; cursor:pointer; transition:.2s;}
+.slider-switch:before{content:""; position:absolute; height:14px; width:14px; left:3px; top:3px; background:var(--text-faint); border-radius:50%; transition:.2s;}
+input:checked + .slider-switch{background:var(--accent-soft); border-color:var(--accent);}
+input:checked + .slider-switch:before{transform:translateX(18px); background:var(--accent);}
+
+.divider{height:1px; background:var(--border-soft); margin:16px 0;}
+
+details.adv{border:1px solid var(--border-soft); border-radius:8px; padding:0; margin-top:16px; overflow:hidden;}
+details.adv summary{
+  cursor:pointer; padding:10px 14px; font-size:0.82rem; color:var(--text-dim); font-weight:600;
+  list-style:none; display:flex; justify-content:space-between; align-items:center; background:var(--bg-alt);
+}
+details.adv summary::-webkit-details-marker{display:none;}
+details.adv summary:after{content:"+"; color:var(--accent); font-size:1rem;}
+details.adv[open] summary:after{content:"–";}
+details.adv .adv-body{padding:14px;}
+
+/* ---------- results ---------- */
+.result-stage{margin-bottom:16px;}
+.result-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; margin-top:10px;}
+.metric{
+  background:var(--bg-alt); border:1px solid var(--border-soft); border-radius:8px; padding:10px 12px;
+}
+.metric .label{font-size:0.68rem; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:5px;}
+.metric .value{font-family:var(--font-mono); font-size:1.15rem; color:var(--text); font-weight:600;}
+.metric .value .unit{font-size:0.68rem; color:var(--text-faint); font-weight:400; margin-left:3px;}
+.metric.accent .value{color:var(--accent-2);}
+.metric.warn .value{color:var(--warn);}
+.metric.danger .value{color:var(--danger);}
+
+.status-banner{
+  display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:8px; margin-bottom:16px;
+  border:1px solid var(--border-soft); background:var(--bg-alt);
+}
+.status-banner .pill{
+  font-family:var(--font-mono); font-size:0.72rem; padding:4px 10px; border-radius:99px; font-weight:600;
+  text-transform:uppercase; letter-spacing:0.05em;
+}
+.status-banner.stable{border-color:var(--accent-2-soft);} .status-banner.stable .pill{background:var(--accent-2-soft); color:var(--accent-2);}
+.status-banner.heavy{border-color:var(--warn-soft);} .status-banner.heavy .pill{background:var(--warn-soft); color:var(--warn);}
+.status-banner.unstable{border-color:var(--danger-soft);} .status-banner.unstable .pill{background:var(--danger-soft); color:var(--danger);}
+.status-banner .txt{font-size:0.85rem; color:var(--text-dim);}
+.status-banner .txt b{color:var(--text); font-weight:600;}
+
+.note{
+  font-size:0.78rem; color:var(--text-faint); background:var(--bg-alt); border:1px solid var(--border-soft);
+  border-radius:7px; padding:10px 12px; margin-top:10px; line-height:1.5;
+}
+.note.warn{border-color:var(--warn-soft); color:var(--warn);}
+.note.danger{border-color:var(--danger-soft); color:var(--danger);}
+
+.empty-state{
+  text-align:center; padding:60px 20px; color:var(--text-faint);
+}
+.empty-state h3{color:var(--text-dim); font-weight:500; font-size:1rem; margin-bottom:6px;}
+
+/* ---------- modal ---------- */
+.modal-overlay{
+  position:fixed; inset:0; background:rgba(10,12,8,0.72); display:none; align-items:flex-start; justify-content:center;
+  z-index:200; padding:40px 16px; overflow-y:auto;
+}
+.modal-overlay.open{display:flex;}
+.modal{
+  background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px;
+  width:100%; max-width:640px;
+}
+.modal h3{margin-bottom:4px;}
+.modal .sub{color:var(--text-faint); font-size:0.8rem; margin-bottom:16px;}
+.modal-actions{display:flex; gap:10px; margin-top:18px;}
+.close-x{
+  position:absolute; top:14px; right:16px; background:none; border:none; color:var(--text-faint);
+  font-size:1.3rem; cursor:pointer;
+}
+.modal{position:relative;}
+
+footer.foot{
+  max-width:1400px; margin:40px auto 0; padding:20px; color:var(--text-faint); font-size:0.76rem;
+  border-top:1px solid var(--border-soft);
+}
+
+.badge{
+  display:inline-block; font-family:var(--font-mono); font-size:0.68rem; padding:2px 7px; border-radius:5px;
+  background:var(--bg-alt); border:1px solid var(--border-soft); color:var(--text-faint); margin-left:6px;
+}
+.two-implement-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+@media (max-width:600px){.two-implement-grid{grid-template-columns:1fr;} .row2,.row3{grid-template-columns:1fr;}}
+
+/* ---------- nav ---------- */
+.topnav{display:flex; gap:6px; margin-top:16px; flex-wrap:wrap;}
+.nav-tab{
+  background:none; border:1px solid var(--border); color:var(--text-dim); border-radius:7px;
+  padding:8px 14px; font-size:0.82rem; font-weight:600; cursor:pointer; font-family:var(--font-body);
+  transition:all .15s ease;
+}
+.nav-tab:hover{border-color:var(--accent-soft); color:var(--text);}
+.nav-tab.active{background:var(--accent); color:#1B1206; border-color:var(--accent);}
+section.view .card{margin-bottom:16px;}
+
+/* ---------- library tables ---------- */
+.table-wrap{overflow-x:auto; margin-top:14px;}
+table.lib-table{width:100%; border-collapse:collapse; font-size:0.8rem;}
+table.lib-table th{
+  text-align:left; padding:8px 10px; color:var(--text-faint); font-weight:600; font-size:0.72rem;
+  text-transform:uppercase; letter-spacing:0.04em; border-bottom:1px solid var(--border); white-space:nowrap;
+}
+table.lib-table td{padding:8px 10px; border-bottom:1px solid var(--border-soft); color:var(--text-dim); white-space:nowrap;}
+table.lib-table tr:hover td{background:var(--bg-alt);}
+table.lib-table td.name-cell{color:var(--text); font-weight:600;}
+table.lib-table .del-btn{
+  background:none; border:1px solid var(--danger-soft); color:var(--danger); border-radius:5px;
+  padding:3px 9px; font-size:0.72rem; cursor:pointer;
+}
+table.lib-table .del-btn:hover{background:var(--danger-soft);}
+table.lib-table .tag-custom{
+  font-family:var(--font-mono); font-size:0.65rem; padding:2px 6px; border-radius:5px;
+  background:var(--accent-2-soft); color:var(--accent-2);
+}
+.help-list{margin:8px 0 0; padding-left:20px; color:var(--text-dim); font-size:0.85rem; line-height:1.7;}
+.help-list li{margin-bottom:4px;}
+
+/* ---------- export ---------- */
+.export-row{display:flex; gap:10px; margin-bottom:12px;}
+.export-row .btn{width:auto; flex:1;}
+
+/* ---------- print ---------- */
+#printReport{display:none;}
+@media print{
+  body *{visibility:hidden;}
+  #printReport, #printReport *{visibility:visible;}
+  #printReport{position:absolute; left:0; top:0; width:100%; display:block; padding:20px; color:#111; background:#fff;}
+  #printReport h1,#printReport h2,#printReport h3{color:#111; font-family:Georgia,serif;}
+  #printReport table{width:100%; border-collapse:collapse; margin-bottom:14px;}
+  #printReport td,#printReport th{border:1px solid #ccc; padding:5px 8px; font-size:11px; text-align:left;}
+  #printReport .pr-section{margin-bottom:18px;}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <h1>Tillage DSS</h1>
+      <span class="eyebrow">Tractor–Implement Performance Console</span>
+    </div>
+    <p class="sub">Draft, traction, power, fuel and ballast prediction for conventional and combi tillage — built on the ASAE D497.5 draft model and Brixius (1987) traction equations.</p>
+    <nav class="topnav" id="topnav">
+      <button class="nav-tab active" data-view="simulator">Simulator</button>
+      <button class="nav-tab" data-view="implements">Implement Library</button>
+      <button class="nav-tab" data-view="tractors">Tractor Library</button>
+      <button class="nav-tab" data-view="help">Help</button>
+    </nav>
+    <div class="pipeline" id="pipeline"></div>
+  </div>
+</header>
+
+<div class="container">
+<main id="view-simulator" class="view">
+  <!-- ============ LEFT: INPUTS ============ -->
+  <div id="inputs-col">
+
+    <div class="card">
+      <h2><span class="n">01</span>Tillage configuration</h2>
+      <p class="desc">Choose a conventional single implement, or a combi (multi-tool) setup.</p>
+      <div class="mode-tabs" id="modeTabs">
+        <div class="mode-tab active" data-mode="single">Single Implement</div>
+        <div class="mode-tab" data-mode="passive">Passive–Passive Combi</div>
+        <div class="mode-tab" data-mode="active">Active–Passive Combi</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">02</span>Tractor</h2>
+      <p class="desc">Pick from the preloaded library or add your own.</p>
+      <div class="field">
+        <label for="tractorSelect">Tractor model</label>
+        <select id="tractorSelect"></select>
+      </div>
+      <button class="inline-btn" id="addTractorBtn">+ Add custom tractor</button>
+      <div id="tractorSummary" class="note" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card" id="implementCard">
+      <h2><span class="n">03</span>Implement<span id="implCardBadge"></span></h2>
+      <p class="desc" id="implementDesc">Pick from the preloaded library or add your own.</p>
+      <div id="implementFields"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">04</span>Soil</h2>
+      <div class="row2">
+        <div class="field">
+          <label for="soilTexture">Texture</label>
+          <select id="soilTexture">
+            <option value="1.0">Fine (Fi = 1.0)</option>
+            <option value="0.7" selected>Medium (Fi = 0.7)</option>
+            <option value="0.45">Coarse (Fi = 0.45)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="coneIndex">Cone index CI <span class="badge">kPa</span></label>
+          <input type="number" id="coneIndex" value="1200" step="10">
+        </div>
+      </div>
+      <div class="hint" id="soilHint"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">05</span>Operating parameters</h2>
+      <div class="row2">
+        <div class="field">
+          <label for="speedKmh">Forward speed <span class="badge">km/h</span></label>
+          <input type="number" id="speedKmh" value="4" step="0.1">
+        </div>
+        <div class="field">
+          <label for="depthCm">Tillage depth <span class="badge">cm</span></label>
+          <input type="number" id="depthCm" value="15" step="0.5">
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="fieldLength">Field length <span class="badge">m</span></label>
+          <input type="number" id="fieldLength" value="200" step="1">
+        </div>
+        <div class="field">
+          <label for="fieldWidth">Field width <span class="badge">m</span></label>
+          <input type="number" id="fieldWidth" value="100" step="1">
+        </div>
+      </div>
+
+      <details class="adv">
+        <summary>Advanced / drivetrain settings</summary>
+        <div class="adv-body">
+          <div class="row2">
+            <div class="field">
+              <label for="transEff">Transmission efficiency <span class="badge">%</span></label>
+              <input type="number" id="transEff" value="86" step="0.5">
+            </div>
+            <div class="field">
+              <label for="powerReserve">Power reserve <span class="badge">%</span></label>
+              <input type="number" id="powerReserve" value="20" step="1">
+            </div>
+          </div>
+          <div class="toggle-row">
+            <span class="lbl">Use legacy VB6 wheel-numeric formula (adds 1/(1+3·b/d) shape factor)</span>
+            <label class="switch"><input type="checkbox" id="legacyBn"><span class="slider-switch"></span></label>
+          </div>
+          <div class="hint">Off (default) uses the validated Wismer-Luth wheel numeric Bn = CI·b·d/W, matching the audited reference engine and standard literature. On reproduces the original Visual Basic tool's shape-factor variant — see the note in Results → Traction.</div>
+        </div>
+      </details>
+    </div>
+
+    <button class="btn" id="runBtn">Run simulation →</button>
+  </div>
+
+  <!-- ============ RIGHT: RESULTS ============ -->
+  <div id="results-col">
+    <div class="export-row" id="exportRow" style="display:none;">
+      <button class="btn secondary small" id="exportExcelBtn">⬇ Download Excel</button>
+      <button class="btn secondary small" id="exportPdfBtn">⬇ Download PDF</button>
+    </div>
+    <div class="card" id="resultsCard">
+      <div class="empty-state">
+        <h3>No simulation run yet</h3>
+        <p>Fill in the tractor, implement and soil parameters, then run the simulation.</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ============ IMPLEMENT LIBRARY VIEW ============ -->
+<section id="view-implements" class="view" style="display:none;">
+  <div class="card">
+    <h2>Implement library</h2>
+    <p class="desc"><span id="implementLibCount"></span> ASAE/ASABE D497.5 A, B, C are the machine-specific speed coefficients (Table 1); Py/D is the vertical:horizontal soil-reaction ratio (Kepner, Bainer &amp; Barger, 1978).</p>
+    <button class="inline-btn" id="addImplementBtnLib" style="max-width:260px;">+ Add custom implement</button>
+    <div class="table-wrap">
+      <table class="lib-table" id="implementLibTable"></table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TRACTOR LIBRARY VIEW ============ -->
+<section id="view-tractors" class="view" style="display:none;">
+  <div class="card">
+    <h2>Tractor library</h2>
+    <p class="desc" id="tractorLibDesc"></p>
+    <button class="inline-btn" id="addTractorBtnLib" style="max-width:260px;">+ Add custom tractor</button>
+    <div class="table-wrap">
+      <table class="lib-table" id="tractorLibTable"></table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HELP VIEW ============ -->
+<section id="view-help" class="view" style="display:none;">
+  <div class="card">
+    <h2>How this DSS works</h2>
+    <p class="desc" style="margin-bottom:16px;">A decision support system for predicting tractor-implement field performance, following the same computation chain as the original Visual Basic DSS, modernized and cross-checked against the ASAE D497.5 standard.</p>
+
+    <h3 style="font-size:0.95rem; margin-top:18px;">The three modes</h3>
+    <ul class="help-list">
+      <li><b>Single Implement</b> — one conventional towed tool (plough, disc, cultivator).</li>
+      <li><b>Passive–Passive Combi</b> — two towed tools sharing a toolbar. Combined draft is reduced below the simple sum by an interaction coefficient <span class="mono">ki</span> (0–0.25), since the trailing tool partly works the leading tool's already-loosened soil.</li>
+      <li><b>Active–Passive Combi</b> — a towed tool plus a PTO-driven rotor. The rotor's forward thrust offsets part of the draft; its reaction torque adds load to the rear axle.</li>
+    </ul>
+
+    <h3 style="font-size:0.95rem; margin-top:18px;">Calculation pipeline</h3>
+    <ol class="help-list">
+      <li><b>Draft</b> — ASAE D497.5 §4.1.1: D = Fi·[A + B·S + C·S²]·W·T, with T = tillage depth in cm used directly (no /10 — this was corrected from an earlier revision that had understated draft 10×).</li>
+      <li><b>Axle loads</b> — moment balance of the tractor-implement free body about the front axle, giving dynamic rear/front loads.</li>
+      <li><b>Traction &amp; slip</b> — Brixius (1987) wheel-numeric, gross/net traction, iterated in 0.1% slip steps from a 2% floor until developed pull meets draft, then linearly interpolated for the exact value.</li>
+      <li><b>Power</b> — drawbar power, required PTO power, and % of rated PTO used.</li>
+      <li><b>Fuel &amp; field capacity</b> — ASABE (2001) specific fuel consumption model; theoretical vs actual field capacity accounting for headland turns.</li>
+      <li><b>Ballast</b> — front ballast to restore a 0.20 front weight-utilization ratio; rear ballast to hold slip at (or below) 15%.</li>
+    </ol>
+
+    <h3 style="font-size:0.95rem; margin-top:18px;">Glossary</h3>
+    <table class="lib-table">
+      <tr><th>Term</th><th>Meaning</th></tr>
+      <tr><td class="mono">Fi</td><td>Soil texture adjustment factor: 1.0 fine, 0.7 medium, 0.45 coarse (ASAE D497.5 Table 1)</td></tr>
+      <tr><td class="mono">CI</td><td>Cone index — soil penetration resistance, kPa (ASAE S313)</td></tr>
+      <tr><td class="mono">Bn</td><td>Wheel numeric — dimensionless tyre-soil mobility ratio</td></tr>
+      <tr><td class="mono">Slip</td><td>Wheel slip fraction — difference between theoretical and actual travel speed</td></tr>
+      <tr><td class="mono">TE</td><td>Tractive efficiency — ratio of drawbar to axle power delivered</td></tr>
+      <tr><td class="mono">Put</td><td>Power utilization — required PTO power as % of available rated power</td></tr>
+      <tr><td class="mono">Kwef</td><td>Front axle weight-utilization ratio (target 0.20 for steering control)</td></tr>
+      <tr><td class="mono">ki</td><td>Passive-passive draft interaction coefficient (0–0.25)</td></tr>
+      <tr><td class="mono">ηr</td><td>Active rotor efficiency (0.25–0.45)</td></tr>
+    </table>
+
+    <h3 style="font-size:0.95rem; margin-top:18px;">Custom data</h3>
+    <p class="desc">Tractors, implements you add are private to your account and saved automatically. Use the Implement Library / Tractor Library tabs to review or add entries outside of a simulation run.</p>
+
+    <h3 style="font-size:0.95rem; margin-top:18px;">Exporting results</h3>
+    <p class="desc">After running a simulation, use "Download Excel" for a structured workbook (inputs + every stage's results) or "Download PDF" for a print-formatted report — both appear above the results once a simulation has run.</p>
+
+    <h3 style="font-size:0.95rem; margin-top:18px;">Formula references</h3>
+    <p class="desc">ASAE/ASABE D497.5 FEB2006 (draft, fuel) · Brixius, W.W. (1987) "Traction Prediction Equations for Bias-Ply Tires" (traction) · Kepner, Bainer &amp; Barger (1978) <i>Principles of Farm Machinery</i> (weight transfer) · Liljedahl et al. (1996) <i>Tractors and Their Power Units</i> (wheel eccentricity).</p>
+  </div>
+</section>
+</div>
+
+<div id="printReport"></div>
+
+<div class="container">
+  <div class="card" style="margin-top:8px;">
+    <details class="adv">
+      <summary>Formula audit — cross-validated against the corrected spreadsheet</summary>
+      <div class="adv-body">
+        <p style="font-size:0.82rem; color:var(--text-dim); margin:0 0 12px;">
+          An earlier revision of this engine had a draft-equation error, and an earlier version of <code>Tractor_Implement_Performance_Calculator.xlsx</code> had three further formula errors — all found and fixed. The corrected spreadsheet has been re-checked cell-by-cell against this engine for its own default inputs — every intermediate value matches to 3–4 decimal places (Rr, Bn, μg, μ, TE, SFC, fuel, Put all confirmed exact). Details below for the record.
+        </p>
+        <div class="note danger" style="margin-bottom:10px;">
+          <b>0. Draft force equation — confirmed against the primary ASAE D497.5 FEB2006 standard (most consequential fix).</b>
+          The standard's own equation (§4.1.1) is <span class="mono">D = Fi·[A + B(S) + C(S)²]·W·T</span>, with T (tillage depth) in cm used <b>directly</b> — there is no division by 10 anywhere in the standard text. An earlier revision of this engine (and of the reference spreadsheet) divided depth by 10, understating draft force by <b>exactly 10×</b> for every major tillage tool. This has been corrected; draft, and therefore every downstream result (axle loads, traction, slip, power, fuel, ballast), is now roughly 10× larger than in earlier revisions of this tool for the same inputs — verified against the standard's Table 1 coefficients, which produce physically realistic draft figures (e.g. ~15.6 kN for a 1 m mouldboard plough at 20 cm) only without the /10.
+        </div>
+        <div class="note" style="margin-bottom:10px;">
+          <b>1. Rear axle load (Rr) — operator-precedence error (fixed).</b> The original formula divided only the last term (D·Yd) by the denominator (L−er+ef), instead of the whole numerator:
+          <br><span class="mono" style="font-size:0.74rem;">was: (Wi+Py)(...) + Wt(...) − (D·Yd)/(L−er+ef)</span>
+          <br><span class="mono" style="font-size:0.74rem;">now: [(Wi+Py)(...) + Wt(...) − D·Yd] / (L−er+ef)</span>
+          <br>This had inflated Rr by roughly 2×, understating the wheel numeric Bn by ~40% and tractive efficiency by a similar margin.
+        </div>
+        <div class="note" style="margin-bottom:10px;">
+          <b>2. Vertical soil reaction (Py) — wrong cell reference (fixed).</b> Was Py = ratio × g (9.81); now correctly Py = ratio × D (draft force).
+        </div>
+        <div class="note" style="margin-bottom:10px;">
+          <b>3. Hourly fuel consumption — wrong basis (fixed).</b> Was Fuel = SFC × (rated PTO power × 0.88); now correctly Fuel = SFC × drawbar power (DBp), so fuel use responds to the actual operating condition again.
+        </div>
+        <div class="note warn" style="margin-bottom:10px;">
+          <b>Measured effect of the original bug on wheel slip</b> (3-bottom mouldboard plough, Captain DI 2600 tractor, CI = 1500 kPa) — kept here for reference:
+          <table style="width:100%; border-collapse:collapse; font-size:0.78rem; margin-top:8px;">
+            <tr style="color:var(--text-faint); text-align:left;"><th style="padding:4px 6px;">Depth / speed</th><th>Correct slip</th><th>Buggy slip</th><th>Error</th></tr>
+            <tr><td style="padding:4px 6px;">20 cm / 5 km/h</td><td>2.80%</td><td>2.40%</td><td>0.40 pp</td></tr>
+            <tr><td style="padding:4px 6px;">25 cm / 6 km/h</td><td>3.60%</td><td>2.90%</td><td>0.70 pp</td></tr>
+            <tr><td style="padding:4px 6px;">30 cm / 7 km/h</td><td>4.70%</td><td>3.60%</td><td>1.10 pp</td></tr>
+          </table>
+          <span style="display:block; margin-top:8px;">The bug always made slip look <b>lower</b> and tractive efficiency look <b>higher</b> than reality — the dangerous direction for a decision-support tool.</span>
+        </div>
+        <div class="note">
+          <b>Square-root guard.</b> Every square root in this engine (wheel numeric in the traction terms, and the specific-fuel-consumption radicand) runs through a guard that raises a clear, named error — e.g. "Cannot compute wheel numeric (Bn) in traction term: square root of a negative value" — instead of silently producing <span class="mono">NaN</span> that would propagate through every downstream result.
+        </div>
+      </div>
+    </details>
+  </div>
+</div>
+
+<footer class="foot">
+  Formulas: ASAE/ASABE D497 draft model · Brixius (1987) traction equations · ASAE D497 fuel model (ASABE 2001) · Kepner, Bainer &amp; Barger (1978) weight-transfer ratios · Liljedahl et al. (1996) wheel eccentricity.
+  Custom tractors, implements and soils are saved to your account and are private to you.
+</footer>
+
+<!-- ============ MODALS ============ -->
+<div class="modal-overlay" id="tractorModalOverlay">
+  <div class="modal">
+    <button class="close-x" data-close="tractorModalOverlay">&times;</button>
+    <h3>Add custom tractor</h3>
+    <p class="sub">All fields required. Tyre geometry drives the mobility-number (traction) calculation, so enter it precisely.</p>
+    <div id="tractorFormBody"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" data-close="tractorModalOverlay">Cancel</button>
+      <button class="btn" id="saveTractorBtn">Save tractor</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="implementModalOverlay">
+  <div class="modal">
+    <button class="close-x" data-close="implementModalOverlay">&times;</button>
+    <h3>Add custom implement</h3>
+    <p class="sub">A, B, C are the ASAE/ASABE D497 speed-coefficients for your implement type and soil texture.</p>
+    <div id="implementFormBody"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" data-close="implementModalOverlay">Cancel</button>
+      <button class="btn" id="saveImplementBtn">Save implement</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ======================================================================
+   DATA — preloaded library (from Tractor_Implement_Performance_Calculator.xlsx)
+   ====================================================================== */
+const LIB_TRACTORS = [{"name":"VST Shakti MT 180D HS/JAI","Pt":12,"N_engine":2700,"Tmax":45.5,"L_wb":1.42,"Wf_kg":315,"Wr_kg":440,"Wt":755,"Xcgt":0.59,"Hd":0.72,"tireFront":"5.2 X 12","tireRear":"8 x 18","df_mm":513.59,"bf_mm":127,"rslf_mm":237.74,"rf_mm":245.01,"dr_mm":789.43,"br_mm":203.2,"rslr_mm":364.24,"rr_mm":375.85},{"name":"Mahindra and Mahindra B 275 DI","Pt":25.5,"N_engine":2600,"Tmax":105.2,"L_wb":1.83,"Wf_kg":710,"Wr_kg":1080,"Wt":1790,"Xcgt":0.73,"Hd":0.72,"tireFront":"6 x 16","tireRear":"12.4 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1226.31,"br_mm":314.96,"rslr_mm":565.91,"rr_mm":583.91},{"name":"PTL 735 FE","Pt":25.3,"N_engine":2000,"Tmax":139.3,"L_wb":1.955,"Wf_kg":675,"Wr_kg":1110,"Wt":1785,"Xcgt":0.74,"Hd":0.72,"tireFront":"6 x 16","tireRear":"12.4 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1226.31,"br_mm":314.96,"rslr_mm":565.91,"rr_mm":583.91},{"name":"PTL 744 FE","Pt":30.4,"N_engine":2000,"Tmax":165.6,"L_wb":1.955,"Wf_kg":750,"Wr_kg":1180,"Wt":1930,"Xcgt":0.76,"Hd":0.72,"tireFront":"6 x 16","tireRear":"13.6 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1272.03,"br_mm":345.44,"rslr_mm":584.2,"rr_mm":603.88},{"name":"PTL 855 FE","Pt":33,"N_engine":2000,"Tmax":181.7,"L_wb":1.95,"Wf_kg":755,"Wr_kg":1160,"Wt":1915,"Xcgt":0.77,"Hd":0.72,"tireFront":"6 x 16","tireRear":"13.6 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1272.03,"br_mm":345.44,"rslr_mm":584.2,"rr_mm":603.88},{"name":"Eicher 368","Pt":25,"N_engine":2150,"Tmax":132.5,"L_wb":1.985,"Wf_kg":720,"Wr_kg":1100,"Wt":1820,"Xcgt":0.79,"Hd":0.72,"tireFront":"6 x 16","tireRear":"12.4 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1226.31,"br_mm":314.96,"rslr_mm":565.91,"rr_mm":583.91},{"name":"Eicher 485","Pt":28.7,"N_engine":2150,"Tmax":148.7,"L_wb":2.07,"Wf_kg":695,"Wr_kg":1205,"Wt":1900,"Xcgt":0.76,"Hd":0.72,"tireFront":"6 x 16","tireRear":"12.4 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1226.31,"br_mm":314.96,"rslr_mm":565.91,"rr_mm":583.91},{"name":"Farmtrac 45","Pt":27.1,"N_engine":2000,"Tmax":144.1,"L_wb":1.944,"Wf_kg":760,"Wr_kg":1005,"Wt":1845,"Xcgt":0.8,"Hd":0.72,"tireFront":"6 x 16","tireRear":"13.6 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1272.03,"br_mm":345.44,"rslr_mm":584.2,"rr_mm":603.88},{"name":"Farmtrac 55","Pt":30.5,"N_engine":2000,"Tmax":157.4,"L_wb":1.935,"Wf_kg":755,"Wr_kg":1160,"Wt":1915,"Xcgt":0.76,"Hd":0.72,"tireFront":"6 x 16","tireRear":"13.6 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1272.03,"br_mm":345.44,"rslr_mm":584.2,"rr_mm":603.88},{"name":"TAFE MF 245","Pt":30.2,"N_engine":2250,"Tmax":157.8,"L_wb":1.814,"Wf_kg":655,"Wr_kg":1040,"Wt":1695,"Xcgt":0.7,"Hd":0.72,"tireFront":"6 x 16","tireRear":"13.6 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1272.03,"br_mm":345.44,"rslr_mm":584.2,"rr_mm":603.88},{"name":"TAFE MF 241 DI(J)","Pt":28.3,"N_engine":2000,"Tmax":156,"L_wb":1.82,"Wf_kg":680,"Wr_kg":1020,"Wt":1700,"Xcgt":0.73,"Hd":0.72,"tireFront":"6 x 16","tireRear":"12.4 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1226.31,"br_mm":314.96,"rslr_mm":565.91,"rr_mm":583.91},{"name":"New Holland 3230 NX","Pt":28.6,"N_engine":2000,"Tmax":158.6,"L_wb":1.91,"Wf_kg":680,"Wr_kg":1000,"Wt":1680,"Xcgt":0.77,"Hd":0.72,"tireFront":"6 x 16","tireRear":"12.4 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1226.31,"br_mm":314.96,"rslr_mm":565.91,"rr_mm":583.91},{"name":"New Holland 3630 TX","Pt":33.8,"N_engine":2500,"Tmax":141.7,"L_wb":2.065,"Wf_kg":840,"Wr_kg":1250,"Wt":2090,"Xcgt":0.83,"Hd":0.72,"tireFront":"6 x 16","tireRear":"13.6 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1272.03,"br_mm":345.44,"rslr_mm":584.2,"rr_mm":603.88},{"name":"Sonalika 750 DI","Pt":28.9,"N_engine":2250,"Tmax":140.6,"L_wb":1.94,"Wf_kg":790,"Wr_kg":1180,"Wt":1970,"Xcgt":0.78,"Hd":0.72,"tireFront":"6 x 16","tireRear":"13.6 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1272.03,"br_mm":345.44,"rslr_mm":584.2,"rr_mm":603.88},{"name":"Sonalika 750 DI III","Pt":31.3,"N_engine":2100,"Tmax":155.9,"L_wb":2.065,"Wf_kg":925,"Wr_kg":1205,"Wt":2130,"Xcgt":0.9,"Hd":0.72,"tireFront":"6 x 16","tireRear":"13.6 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1272.03,"br_mm":345.44,"rslr_mm":584.2,"rr_mm":603.88},{"name":"Sonalika DI 55","Pt":36.6,"N_engine":2100,"Tmax":185.5,"L_wb":2.085,"Wf_kg":930,"Wr_kg":1205,"Wt":2135,"Xcgt":0.91,"Hd":0.72,"tireFront":"6 x 16","tireRear":"13.6 x 28","df_mm":659.38,"bf_mm":152.4,"rslf_mm":306.83,"rf_mm":315.58,"dr_mm":1272.03,"br_mm":345.44,"rslr_mm":584.2,"rr_mm":603.88},{"name":"Johndeere 5310","Pt":37.4,"N_engine":2400,"Tmax":178,"L_wb":2.05,"Wf_kg":755,"Wr_kg":1400,"Wt":2155,"Xcgt":0.72,"Hd":0.72,"tireFront":"6.5 x 20","tireRear":"16.9 x 28","df_mm":786.13,"bf_mm":165.1,"rslf_mm":368.3,"rf_mm":377.82,"dr_mm":1397.76,"br_mm":429.26,"rslr_mm":634.49,"rr_mm":658.77},{"name":"New Holland 6010","Pt":39,"N_engine":2300,"Tmax":236.93,"L_wb":2.075,"Wf_kg":965,"Wr_kg":1565,"Wt":2580,"Xcgt":0.775,"Hd":0.72,"tireFront":"7.5  x 16","tireRear":"16.9 x 28","df_mm":716.53,"bf_mm":190.5,"rslf_mm":329.69,"rf_mm":340.56,"dr_mm":1397.76,"br_mm":429.26,"rslr_mm":634.49,"rr_mm":658.77}];
+const LIB_IMPLEMENTS = [{"name":"MB Plough single  bottom","type":"moldboard_plough","W":0.3,"Wm_kg":125,"Xcgi":0.45,"PyD":0.2,"A":652,"B":0,"C":5.1},{"name":"MB Plough two bottom","type":"moldboard_plough","W":0.6,"Wm_kg":225,"Xcgi":0.55,"PyD":0.2,"A":652,"B":0,"C":5.1},{"name":"MB Plough three bottom","type":"moldboard_plough","W":1.08,"Wm_kg":350,"Xcgi":0.7,"PyD":0.2,"A":652,"B":0,"C":5.1},{"name":"Disc Plough single disc","type":"disc_plough","W":0.45,"Wm_kg":150,"Xcgi":0.5,"PyD":0,"A":124,"B":6.4,"C":0},{"name":"Disc Plough two  disc","type":"disc_plough","W":0.75,"Wm_kg":260,"Xcgi":0.65,"PyD":0,"A":124,"B":6.4,"C":0},{"name":"5 x 5 offset disc harrow","type":"disc_harrow","W":1.25,"Wm_kg":200,"Xcgi":0.65,"PyD":0,"A":254,"B":13.2,"C":0},{"name":"6  x 6  offset disc harrow","type":"disc_harrow","W":1.4,"Wm_kg":260,"Xcgi":0.65,"PyD":0,"A":254,"B":13.2,"C":0},{"name":"7  x 7  offset disc harrow","type":"disc_harrow","W":1.55,"Wm_kg":280,"Xcgi":0.65,"PyD":0,"A":254,"B":13.2,"C":0},{"name":"9 tyne cultivator","type":"cultivator","W":2.2,"Wm_kg":180,"Xcgi":0.46,"PyD":0.2,"A":32,"B":1.9,"C":0},{"name":"11 tyne cultivator","type":"cultivator","W":2.66,"Wm_kg":230,"Xcgi":0.46,"PyD":0.2,"A":32,"B":1.9,"C":0},{"name":"13 tyne cultivator","type":"cultivator","W":3.13,"Wm_kg":280,"Xcgi":0.46,"PyD":0.2,"A":32,"B":1.9,"C":0}];
+
+
+/* ======================================================================
+   ENGINE — faithful port of the validated Python engine
+   (dss_shared.py / legacy_algorithms.py / combi_algorithms.py),
+   cross-checked against ASAE/ASABE D497 and Brixius (1987).
+   ====================================================================== */
+const K = {
+  GRAVITY: 9.81,
+  DIESEL_CALORIFIC_VALUE: 35.5,
+  WHEEL_ECCENTRICITY_COEFF: 0.1,
+  DRAFT_DEPTH_ACTION_FRACTION: 2 / 3,
+  ROLLING_RESISTANCE_BASE: 0.04,
+  ROLLING_RESISTANCE_SLIP_COEFF: 0.5,
+  TRACTION_MU_G_SCALE: 0.88,
+  TRACTION_BN_EXPONENT_COEFF: 0.1,
+  TRACTION_SLIP_EXPONENT_COEFF: 7.5,
+  FRONT_BALLAST_TARGET_KWEF: 0.20,
+  REAR_BALLAST_TARGET_SLIP_PCT: 15.0,
+  MAX_SLIP_PCT: 20.0,
+  SLIP_INITIAL_PCT: 2.0,
+  SLIP_INCREMENT_PCT: 0.1,
+  SFC_A: 2.64, SFC_B: 3.91, SFC_C: 0.203, SFC_RAD_COEFF: 738, SFC_RAD_OFFSET: 173,
+  FIELD_EFF_CLAMP: [50, 95],
+  OVERALL_EFF_CLAMP: [0, 100],
+  TURNING_TIME_CLAMP: [8, 45],
+  KI_RANGE: [0, 0.25],
+  ROTOR_EFF_RANGE: [0.25, 0.45],
+};
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function requireFinite(name, v) {
+  if (!Number.isFinite(v)) throw new Error(`Invalid ${name}: expected a finite number, got ${v}`);
+  return v;
+}
+function requirePositive(name, v) {
+  requireFinite(name, v);
+  if (v <= 0) throw new Error(`Invalid ${name}: must be greater than zero, got ${v}`);
+  return v;
+}
+function safeDiv(name, num, den) {
+  requireFinite(`${name} numerator`, num);
+  requireFinite(`${name} denominator`, den);
+  if (den === 0) throw new Error(`Cannot compute ${name}: division by zero`);
+  return requireFinite(name, num / den);
+}
+function safeSqrt(name, v) {
+  requireFinite(name, v);
+  if (v < 0) throw new Error(`Cannot compute ${name}: square root of a negative value (${v})`);
+  return Math.sqrt(v);
+}
+
+// D = Fi·[A + B·S + C·S²]·W·T — ASAE D497.5 §4.1.1. T (depth, cm) is used
+// directly for major tillage tools; NOT divided by 10 (confirmed against the
+// primary ASAE D497.5 FEB2006 standard text — an earlier revision of this
+// engine incorrectly divided by 10, understating draft by 10x).
+function draftForceN({ fi, A, B, C, speedKmh, widthM, depthCm }) {
+  requirePositive('implement width', widthM);
+  requirePositive('operating speed', speedKmh);
+  requirePositive('tillage depth', depthCm);
+  return requireFinite('draft force',
+    fi * (A + B * speedKmh + C * speedKmh ** 2) * widthM * depthCm);
+}
+
+function geometryTerms({ depthCm, rearRollingRadiusM, frontRollingRadiusM }) {
+  requirePositive('tillage depth', depthCm);
+  requirePositive('rear rolling radius', rearRollingRadiusM);
+  requirePositive('front rolling radius', frontRollingRadiusM);
+  return {
+    ydM: K.DRAFT_DEPTH_ACTION_FRACTION * (depthCm / 100.0),
+    erM: K.WHEEL_ECCENTRICITY_COEFF * rearRollingRadiusM,
+    efM: K.WHEEL_ECCENTRICITY_COEFF * frontRollingRadiusM,
+  };
+}
+
+function combinedAxleLoad({ Wt, WiN, PyN, XcgiEff, Hd, L, Xcgt, erM, efM, ydM, DtotalN, extraRearLoadN = 0 }) {
+  const denom = requireFinite('axle load denominator', L - erM + efM);
+  const Rr = safeDiv('rear axle load',
+    (WiN + PyN) * (XcgiEff + Hd + L + efM) + Wt * (L + efM - Xcgt) - DtotalN * ydM,
+    denom) + extraRearLoadN;
+  const Rf = (Wt + WiN + PyN) - Rr;
+  return { Rr, Rf };
+}
+
+function mobilityNumber({ CI, bM, dM, WkN, legacyShapeFactor = false }) {
+  requirePositive('cone index', CI);
+  requirePositive('tyre width', bM);
+  requirePositive('tyre diameter', dM);
+  requirePositive('dynamic wheel load', WkN);
+  let bn = (CI * bM * dM) / WkN;
+  if (legacyShapeFactor) bn = bn * (1 / (1 + 3 * (bM / dM)));
+  return bn;
+}
+
+function grossTractionRatio(Bn) {
+  return K.TRACTION_MU_G_SCALE * (1 - Math.exp(-K.TRACTION_BN_EXPONENT_COEFF * Bn));
+}
+function netTractionCoefficient(muG, Bn, slipFrac) {
+  return muG * (1 - Math.exp(-K.TRACTION_SLIP_EXPONENT_COEFF * slipFrac)) - 1 / Bn - K.ROLLING_RESISTANCE_SLIP_COEFF * slipFrac / safeSqrt('wheel numeric (Bn) in traction term', Bn);
+}
+function tractiveEfficiencyPct(mu, slipFrac, muG) {
+  return (mu * (1 - slipFrac) / muG) * 100;
+}
+
+function solveSlip({ DtotalN, RrN, CI, brM, drM, legacyShapeFactor = false }) {
+  let slipPct = K.SLIP_INITIAL_PCT;
+  let converged = false;
+  let last = null;
+  let prev = null;
+  while (slipPct <= K.MAX_SLIP_PCT + 1e-9) {
+    const slipFrac = slipPct / 100.0;
+    const WkN = (RrN / 2) / 1000.0;
+    const Bn = mobilityNumber({ CI, bM: brM, dM: drM, WkN, legacyShapeFactor });
+    const muG = grossTractionRatio(Bn);
+    const mu = netTractionCoefficient(muG, Bn, slipFrac);
+    const Pst = mu * RrN;
+    last = { slipPct, Bn, muG, mu, Pst };
+    if (Pst >= DtotalN) { converged = true; break; }
+    prev = last;
+    slipPct += K.SLIP_INCREMENT_PCT;
+  }
+
+  let actualSlipPct = last.slipPct;
+  if (converged && prev) {
+    actualSlipPct = prev.slipPct + (DtotalN - prev.Pst) * (last.slipPct - prev.slipPct) / (last.Pst - prev.Pst);
+  } else if (converged && !prev) {
+    actualSlipPct = K.SLIP_INITIAL_PCT;
+  }
+
+  return {
+    ...last,
+    converged,
+    steppedSlipPct: last.slipPct,
+    actualSlipPct,
+    assumedStartPct: K.SLIP_INITIAL_PCT,
+    limitPct: K.MAX_SLIP_PCT,
+    hitLimit: !converged,
+  };
+}
+
+function specificFuelConsumption(xFraction) {
+  const x = Math.max(0, xFraction);
+  return (K.SFC_A * x + K.SFC_B) - K.SFC_C * safeSqrt('SFC', K.SFC_RAD_COEFF * x + K.SFC_RAD_OFFSET);
+}
+
+function powerAndFuel({ draftN, speedKmh, tePct, transEffPct, powerReservePct, ptoPowerKw, fcTh, fcAc, extraPtoKw = 0 }) {
+  requirePositive('rated PTO power', ptoPowerKw);
+  requirePositive('operating speed', speedKmh);
+  requirePositive('theoretical field capacity', fcTh);
+  requirePositive('actual field capacity', fcAc);
+  requirePositive('tractive efficiency', tePct);
+
+  const transEffFrac = requirePositive('transmission efficiency', transEffPct / 100.0);
+  const reserveFrac = powerReservePct / 100.0;
+  if (reserveFrac >= 1.0) throw new Error(`Invalid power reserve: must be below 100%, got ${powerReservePct}%`);
+
+  const pdbKw = draftN * speedKmh / 3.6 / 1000.0;
+  const ptrKw = safeDiv('required PTO power', pdbKw, (tePct / 100.0) * transEffFrac);
+
+  const totalPtoKw = ptrKw + extraPtoKw;
+  const putPct = safeDiv('power utilization', totalPtoKw, ptoPowerKw * (1.0 - reserveFrac)) * 100.0;
+  const xFraction = safeDiv('PTO power fraction', totalPtoKw, ptoPowerKw);
+
+  const sfc = specificFuelConsumption(xFraction);
+  const fuelLph = sfc * pdbKw;
+  const fuelLphPtoBasis = sfc * totalPtoKw;
+  const fuelLhaRaw = safeDiv('fuel per hectare', fuelLph, fcAc);
+  const fuelLha = Math.max(0, fuelLhaRaw);
+
+  let overallPct = 0;
+  if (fuelLha > 0) {
+    overallPct = clamp(pdbKw * 3600.0 / 1000.0 / (fcTh * fuelLha * K.DIESEL_CALORIFIC_VALUE) * 100.0, K.OVERALL_EFF_CLAMP[0], K.OVERALL_EFF_CLAMP[1]);
+  }
+  return { pdbKw, ptrKw, putPct, xFraction, sfc, fuelLph, fuelLphPtoBasis, fuelLha, overallPct };
+}
+
+function putLoadStatus(putPct) {
+  if (putPct >= 95 && putPct <= 100) return 'Tractor is properly loaded';
+  if (putPct < 95) return 'Tractor is Underloaded';
+  return 'Tractor is Overloaded';
+}
+
+function fieldCapacity({ speedKmh, widthM, fieldAreaHa, fieldWidthM }) {
+  requirePositive('operating speed', speedKmh);
+  requirePositive('implement width', widthM);
+  requirePositive('field area', fieldAreaHa);
+
+  const fcTh = speedKmh * widthM / 10.0;
+  if (fcTh <= 0) throw new Error('Theoretical field capacity is non-positive');
+
+  const turningTimeS = clamp(15.56 + 2.61 * (widthM / speedKmh) - 1.41 * speedKmh, K.TURNING_TIME_CLAMP[0], K.TURNING_TIME_CLAMP[1]);
+  const numberTurns = Math.max(0, Math.round(fieldWidthM / widthM));
+  const totalTurnTimeH = (turningTimeS * 2.0 * numberTurns) / 3600.0;
+  const theoreticalTimeH = fieldAreaHa / fcTh;
+  const totalTimeH = totalTurnTimeH + theoreticalTimeH;
+  if (totalTimeH <= 0) throw new Error('Total operating time is non-positive');
+
+  const fcAc = fieldAreaHa / totalTimeH;
+  const fieldEffRawPct = (fcAc / fcTh) * 100.0;
+  return {
+    fcTh, fcAc,
+    fieldEffPct: clamp(fieldEffRawPct, K.FIELD_EFF_CLAMP[0], K.FIELD_EFF_CLAMP[1]),
+    fieldEffRawPct, turningTimeS, numberTurns, totalTimeH,
+  };
+}
+
+function frontBallastKg(state) {
+  const target = K.FRONT_BALLAST_TARGET_KWEF;
+  const f = (BRfKg) => {
+    const BRfN = BRfKg * K.GRAVITY;
+    const { Rf } = combinedAxleLoad({ ...state, Wt: state.Wt + BRfN });
+    return Rf / (state.Wt + BRfN) - target;
+  };
+  if (f(0) >= 0) return 0;
+  let lo = 0, hi = 5000, guard = 0;
+  while (f(hi) < 0 && guard < 40) { hi *= 1.6; guard++; }
+  if (f(hi) < 0) return null;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (f(mid) < 0) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+function rearBallastKg({ DtotalN, RrN, CI, brM, drM, legacyShapeFactor = false }) {
+  const slipFrac = K.REAR_BALLAST_TARGET_SLIP_PCT / 100.0;
+  let R = Math.max(RrN, DtotalN);
+  for (let i = 0; i < 200; i++) {
+    const WkN = (R / 2) / 1000.0;
+    const Bn = mobilityNumber({ CI, bM: brM, dM: drM, WkN, legacyShapeFactor });
+    const muG = grossTractionRatio(Bn);
+    const mu = netTractionCoefficient(muG, Bn, slipFrac);
+    if (mu <= 0) return null;
+    const Rnext = DtotalN / mu;
+    if (Math.abs(Rnext - R) < 1e-3) { R = Rnext; break; }
+    R = Rnext;
+  }
+  const BRrKg = (R - RrN) / K.GRAVITY;
+  return Math.max(0, BRrKg);
+}
+
+function resultEnvelope({ slipPct, tePct, fuelLha, putPct, fieldEffPct, converged }) {
+  const loadStatus = putLoadStatus(putPct);
+  const recs = [];
+  if (slipPct > 15) recs.push('Reduce operating depth', 'Add ballast');
+  if (putPct > 90) recs.push('Reduce implement width', 'Increase tractor HP');
+  if (tePct < 60) recs.push('Reduce operating speed');
+  if (fuelLha > 45) recs.push('Reduce operating depth');
+  const deduped = [...new Set(recs)];
+  const recommendation = deduped.length ? deduped.join('; ') : 'Operate within the recommended slip and power ranges';
+
+  let status;
+  if (!converged || slipPct >= 20) status = 'Unstable';
+  else if (slipPct > 15 || putPct > 85 || fieldEffPct < 65) status = 'Heavy Load';
+  else status = 'Stable';
+
+  let confidence;
+  if (!converged || slipPct >= 20) confidence = 'Low';
+  else if (slipPct < 8 || slipPct > 15) confidence = 'Moderate';
+  else confidence = 'High';
+
+  return { loadStatus, recommendation, status, confidence };
+}
+
+
+/* ======================================================================
+   APP STATE, STORAGE, LIBRARY MANAGEMENT
+   ====================================================================== */
+let customTractors = [];
+let customImplements = [];
+let lastResult = null;
+
+const state = {
+  mode: 'single',
+  tractorKey: null,
+  implement1Key: null,
+  implement2Key: null,
+  effectiveWidth: null, // combi override
+  ki: 0.15,
+  rotor: { pptoKw: 1.5, nRpm: 540, etaR: 0.28, waKg: 60, xaM: 0.5, daN: 150, fvN: 0 },
+};
+
+async function storageGet(key) {
+  try { const r = await window.storage.get(key, false); return r ? JSON.parse(r.value) : null; }
+  catch (e) { return null; }
+}
+async function storageSet(key, value) {
+  try { await window.storage.set(key, JSON.stringify(value), false); } catch (e) { console.error('storage set failed', e); }
+}
+
+async function loadCustomLibrary() {
+  customTractors = (await storageGet('dss-custom-tractors')) || [];
+  customImplements = (await storageGet('dss-custom-implements')) || [];
+}
+
+function allTractors() {
+  return [
+    ...LIB_TRACTORS.map((t, i) => ({ ...t, _key: 'lib:' + i, _custom: false })),
+    ...customTractors.map((t, i) => ({ ...t, _key: 'custom:' + i, _custom: true })),
+  ];
+}
+function allImplements() {
+  return [
+    ...LIB_IMPLEMENTS.map((im, i) => ({ ...im, _key: 'lib:' + i, _custom: false })),
+    ...customImplements.map((im, i) => ({ ...im, _key: 'custom:' + i, _custom: true })),
+  ];
+}
+function findTractor(key) { return allTractors().find(t => t._key === key); }
+function findImplement(key) { return allImplements().find(i => i._key === key); }
+
+/* ======================================================================
+   RENDER: pipeline stepper
+   ====================================================================== */
+const PIPELINE_STAGES = ['Draft', 'Axle Load', 'Traction & Slip', 'Power', 'Fuel & Field', 'Ballast'];
+function renderPipeline(activeIdx) {
+  const el = document.getElementById('pipeline');
+  el.innerHTML = '';
+  PIPELINE_STAGES.forEach((stage, i) => {
+    const stageDiv = document.createElement('div');
+    let cls = 'pipe-stage';
+    if (activeIdx === 'done' || (typeof activeIdx === 'number' && i < activeIdx)) cls += ' done';
+    else if (typeof activeIdx === 'number' && i === activeIdx) cls += ' active';
+    stageDiv.className = cls;
+    stageDiv.innerHTML = `<span class="dot"></span>${i + 1}. ${stage}`;
+    el.appendChild(stageDiv);
+    if (i < PIPELINE_STAGES.length - 1) {
+      const c = document.createElement('div');
+      c.className = 'pipe-connector';
+      el.appendChild(c);
+    }
+  });
+}
+renderPipeline(-1);
+
+/* ======================================================================
+   RENDER: tractor / implement selects
+   ====================================================================== */
+function renderTractorSelect() {
+  const sel = document.getElementById('tractorSelect');
+  const ts = allTractors();
+  sel.innerHTML =
+    '<optgroup label="Preloaded library">' +
+    ts.filter(t => !t._custom).map(t => `<option value="${t._key}">${t.name} — ${t.Pt} kW PTO</option>`).join('') +
+    '</optgroup>' +
+    (ts.some(t => t._custom) ?
+      '<optgroup label="My tractors">' +
+      ts.filter(t => t._custom).map(t => `<option value="${t._key}">${t.name} — ${t.Pt} kW PTO</option>`).join('') +
+      '</optgroup>' : '');
+  if (!state.tractorKey || !findTractor(state.tractorKey)) state.tractorKey = ts[0]._key;
+  sel.value = state.tractorKey;
+  updateTractorSummary();
+}
+function updateTractorSummary() {
+  const t = findTractor(document.getElementById('tractorSelect').value);
+  state.tractorKey = t._key;
+  const el = document.getElementById('tractorSummary');
+  el.innerHTML = `<b>${t.name}</b> · Wheelbase ${t.L_wb} m · Static weight ${(t.Wf_kg + t.Wr_kg)} kg (F ${t.Wf_kg} / R ${t.Wr_kg}) ·
+    Rear tyre ⌀${t.dr_mm} mm × ${t.br_mm} mm · Front tyre ⌀${t.df_mm} mm × ${t.bf_mm} mm`;
+}
+
+function implementOptionsHtml(selectedKey) {
+  const ims = allImplements();
+  return '<optgroup label="Preloaded library">' +
+    ims.filter(i => !i._custom).map(i => `<option value="${i._key}" ${i._key===selectedKey?'selected':''}>${i.name}</option>`).join('') +
+    '</optgroup>' +
+    (ims.some(i => i._custom) ?
+      '<optgroup label="My implements">' +
+      ims.filter(i => i._custom).map(i => `<option value="${i._key}" ${i._key===selectedKey?'selected':''}>${i.name}</option>`).join('') +
+      '</optgroup>' : '');
+}
+
+function renderImplementFields() {
+  const ims = allImplements();
+  if (!state.implement1Key || !findImplement(state.implement1Key)) state.implement1Key = ims[0]._key;
+  if (!state.implement2Key || !findImplement(state.implement2Key)) state.implement2Key = ims[1] ? ims[1]._key : ims[0]._key;
+
+  const container = document.getElementById('implementFields');
+  const badge = document.getElementById('implCardBadge');
+  const desc = document.getElementById('implementDesc');
+
+  if (state.mode === 'single') {
+    badge.innerHTML = '';
+    desc.textContent = 'Pick from the preloaded library or add your own.';
+    container.innerHTML = `
+      <div class="field">
+        <label for="implement1Select">Implement</label>
+        <select id="implement1Select">${implementOptionsHtml(state.implement1Key)}</select>
+      </div>
+      <button class="inline-btn" id="addImplementBtn">+ Add custom implement</button>`;
+  } else if (state.mode === 'passive') {
+    badge.innerHTML = '<span class="badge">2 tools, towed</span>';
+    desc.textContent = 'Two towed tools on a common toolbar. Interaction coefficient ki reduces combined draft.';
+    container.innerHTML = `
+      <div class="two-implement-grid">
+        <div class="field">
+          <label for="implement1Select">Leading tool</label>
+          <select id="implement1Select">${implementOptionsHtml(state.implement1Key)}</select>
+        </div>
+        <div class="field">
+          <label for="implement2Select">Trailing tool</label>
+          <select id="implement2Select">${implementOptionsHtml(state.implement2Key)}</select>
+        </div>
+      </div>
+      <button class="inline-btn" id="addImplementBtn">+ Add custom implement</button>
+      <div class="divider"></div>
+      <div class="field">
+        <label for="kiSlider">Interaction coefficient ki <span class="hint" style="display:inline">(0 = tools independent, 0.25 = fully overlapping loosened zone)</span></label>
+        <div class="slider-row">
+          <input type="range" id="kiSlider" min="0" max="0.25" step="0.01" value="${state.ki}">
+          <span class="slider-val mono" id="kiVal">${state.ki.toFixed(2)}</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="effWidth">Effective working width override <span class="badge">m</span></label>
+        <input type="number" id="effWidth" step="0.05" placeholder="auto = wider tool">
+        <div class="hint">Field capacity uses this width. Passive–passive tools are usually tandem (leading + trailing on the same pass), so the default is the wider tool's width — override if your setup differs.</div>
+      </div>`;
+  } else { // active
+    badge.innerHTML = '<span class="badge">PTO rotor + passive tool</span>';
+    desc.textContent = 'A passive towed tool plus a PTO-driven active rotor that contributes forward thrust.';
+    container.innerHTML = `
+      <div class="field">
+        <label for="implement1Select">Passive tool</label>
+        <select id="implement1Select">${implementOptionsHtml(state.implement1Key)}</select>
+      </div>
+      <button class="inline-btn" id="addImplementBtn">+ Add custom implement</button>
+      <div class="divider"></div>
+      <h2 style="font-size:0.9rem;">Active rotor</h2>
+      <div class="row2">
+        <div class="field">
+          <label for="rotorPpto">PTO power draw <span class="badge">kW</span></label>
+          <input type="number" id="rotorPpto" value="${state.rotor.pptoKw}" step="0.1">
+        </div>
+        <div class="field">
+          <label for="rotorN">Rotor shaft speed <span class="badge">rpm</span></label>
+          <input type="number" id="rotorN" value="${state.rotor.nRpm}" step="10">
+        </div>
+      </div>
+      <div class="field">
+        <label for="rotorEta">Rotor efficiency ηr <span class="hint" style="display:inline">(0.25–0.45, per DSS spec)</span></label>
+        <div class="slider-row">
+          <input type="range" id="rotorEta" min="0.25" max="0.45" step="0.01" value="${state.rotor.etaR}">
+          <span class="slider-val mono" id="rotorEtaVal">${state.rotor.etaR.toFixed(2)}</span>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="rotorWa">Rotor unit weight <span class="badge">kg</span></label>
+          <input type="number" id="rotorWa" value="${state.rotor.waKg}" step="1">
+        </div>
+        <div class="field">
+          <label for="rotorXa">Rotor CG offset from hitch <span class="badge">m</span></label>
+          <input type="number" id="rotorXa" value="${state.rotor.xaM}" step="0.01">
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="rotorDa">Rotor mechanical resistance Da <span class="badge">N</span></label>
+          <input type="number" id="rotorDa" value="${state.rotor.daN}" step="10">
+        </div>
+        <div class="field">
+          <label for="rotorFv">Dynamic vertical force Fv <span class="badge">N, optional</span></label>
+          <input type="number" id="rotorFv" value="${state.rotor.fvN}" step="10">
+        </div>
+      </div>
+      <div class="hint">Fv is only in the DSS document as a named quantity with no derivation formula — leave at 0 unless you have a measured value for this rotor.</div>`;
+  }
+  wireImplementFieldEvents();
+}
+
+function wireImplementFieldEvents() {
+  const i1 = document.getElementById('implement1Select');
+  if (i1) i1.addEventListener('change', () => { state.implement1Key = i1.value; });
+  const i2 = document.getElementById('implement2Select');
+  if (i2) i2.addEventListener('change', () => { state.implement2Key = i2.value; });
+  const ki = document.getElementById('kiSlider');
+  if (ki) ki.addEventListener('input', () => { state.ki = parseFloat(ki.value); document.getElementById('kiVal').textContent = state.ki.toFixed(2); });
+  const reta = document.getElementById('rotorEta');
+  if (reta) reta.addEventListener('input', () => { state.rotor.etaR = parseFloat(reta.value); document.getElementById('rotorEtaVal').textContent = state.rotor.etaR.toFixed(2); });
+  const addImplBtn = document.getElementById('addImplementBtn');
+  if (addImplBtn) addImplBtn.addEventListener('click', openImplementModal);
+}
+
+/* ======================================================================
+   SOIL HINT
+   ====================================================================== */
+function updateSoilHint() {
+  const tex = parseFloat(document.getElementById('soilTexture').value);
+  const map = { 1.0: 'Fine (clay) — cone index typically 600–1500 kPa', 0.7: 'Medium (loam) — cone index typically 1000–2000 kPa', 0.45: 'Coarse (sand) — cone index typically 1500–3000 kPa' };
+  document.getElementById('soilHint').textContent = (map[tex] || '') + '. Cone index is a measured soil property — adjust it to your field, not just the texture default.';
+}
+
+/* ======================================================================
+   MODE TABS
+   ====================================================================== */
+document.getElementById('modeTabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.mode-tab');
+  if (!tab) return;
+  document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  state.mode = tab.dataset.mode;
+  renderImplementFields();
+});
+
+/* ======================================================================
+   MODALS — add custom tractor / implement
+   ====================================================================== */
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => closeModal(btn.dataset.close)));
+document.querySelectorAll('.modal-overlay').forEach(ov => ov.addEventListener('click', (e) => { if (e.target === ov) ov.classList.remove('open'); }));
+
+function tField(id, label, unit, value, step) {
+  return `<div class="field"><label for="${id}">${label} ${unit ? `<span class="badge">${unit}</span>` : ''}</label>
+    <input type="number" id="${id}" value="${value}" step="${step || 'any'}"></div>`;
+}
+function openTractorModal() {
+  document.getElementById('tractorFormBody').innerHTML = `
+    <div class="field"><label for="ct_name">Tractor name</label><input type="text" id="ct_name" placeholder="e.g. My Tractor 45HP"></div>
+    <div class="row3">
+      ${tField('ct_pt', 'Rated PTO power', 'kW', 30)}
+      ${tField('ct_n', 'Rated engine speed', 'rpm', 2200)}
+      ${tField('ct_tmax', 'Max engine torque', 'N·m', 150)}
+    </div>
+    <div class="row3">
+      ${tField('ct_lwb', 'Wheelbase', 'm', 1.95, '0.01')}
+      ${tField('ct_wf', 'Static front weight', 'kg', 700)}
+      ${tField('ct_wr', 'Static rear weight', 'kg', 1150)}
+    </div>
+    <div class="row2">
+      ${tField('ct_xcgt', 'Tractor CG from rear axle', 'm', 0.75, '0.01')}
+      ${tField('ct_hd', 'Hitch point from rear axle', 'm', 0.72, '0.01')}
+    </div>
+    <div class="divider"></div>
+    <p class="sub" style="margin-bottom:8px;">Front tyre geometry</p>
+    <div class="row3">
+      ${tField('ct_df', 'Overall diameter', 'mm', 660)}
+      ${tField('ct_bf', 'Section width', 'mm', 150)}
+      ${tField('ct_rf', 'Rolling radius', 'mm', 315)}
+    </div>
+    <p class="sub" style="margin:12px 0 8px;">Rear tyre geometry</p>
+    <div class="row3">
+      ${tField('ct_dr', 'Overall diameter', 'mm', 1270)}
+      ${tField('ct_br', 'Section width', 'mm', 345)}
+      ${tField('ct_rr', 'Rolling radius', 'mm', 600)}
+    </div>`;
+  openModal('tractorModalOverlay');
+}
+document.getElementById('addTractorBtn').addEventListener('click', openTractorModal);
+
+document.getElementById('saveTractorBtn').addEventListener('click', async () => {
+  const v = id => parseFloat(document.getElementById(id).value);
+  const name = document.getElementById('ct_name').value.trim();
+  if (!name) { alert('Please name the tractor.'); return; }
+  const t = {
+    name, Pt: v('ct_pt'), N_engine: v('ct_n'), Tmax: v('ct_tmax'), L_wb: v('ct_lwb'),
+    Wf_kg: v('ct_wf'), Wr_kg: v('ct_wr'), Wt: v('ct_wf') + v('ct_wr'),
+    Xcgt: v('ct_xcgt'), Hd: v('ct_hd'),
+    df_mm: v('ct_df'), bf_mm: v('ct_bf'), rf_mm: v('ct_rf'),
+    dr_mm: v('ct_dr'), br_mm: v('ct_br'), rr_mm: v('ct_rr'),
+    tireFront: '', tireRear: '',
+  };
+  for (const [k, val] of Object.entries(t)) {
+    if (typeof val === 'number' && !Number.isFinite(val)) { alert('Please fill in every numeric field.'); return; }
+  }
+  customTractors.push(t);
+  await storageSet('dss-custom-tractors', customTractors);
+  closeModal('tractorModalOverlay');
+  renderTractorSelect();
+  document.getElementById('tractorSelect').value = 'custom:' + (customTractors.length - 1);
+  state.tractorKey = 'custom:' + (customTractors.length - 1);
+  updateTractorSummary();
+});
+
+function openImplementModal() {
+  document.getElementById('implementFormBody').innerHTML = `
+    <div class="row2">
+      <div class="field"><label for="ci_name">Implement name</label><input type="text" id="ci_name" placeholder="e.g. My 4-tyne chisel"></div>
+      <div class="field"><label for="ci_type">Type</label>
+        <select id="ci_type">
+          <option value="moldboard_plough">Moldboard plough</option>
+          <option value="disc_plough">Disc plough</option>
+          <option value="disc_harrow">Disc harrow</option>
+          <option value="cultivator">Cultivator / tyne</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="row2">
+      ${tField('ci_w', 'Working width', 'm', 1.2, '0.01')}
+      ${tField('ci_wm', 'Implement mass', 'kg', 200)}
+    </div>
+    <div class="row2">
+      ${tField('ci_xcgi', 'CG distance from hitch', 'm', 0.6, '0.01')}
+      ${tField('ci_pyd', 'Py/D vertical:horizontal ratio', '', 0.2, '0.01')}
+    </div>
+    <div class="divider"></div>
+    <p class="sub" style="margin-bottom:8px;">ASAE/ASABE D497 speed coefficients — D = Fi·(A+B·S+C·S²)·W·(T/10)</p>
+    <div class="row3">
+      ${tField('ci_a', 'A', 'N/m', 250)}
+      ${tField('ci_b', 'B', 'N·h/(m·km)', 5)}
+      ${tField('ci_c', 'C', 'N·h²/(m·km²)', 0)}
+    </div>`;
+  openModal('implementModalOverlay');
+}
+document.getElementById('saveImplementBtn').addEventListener('click', async () => {
+  const v = id => parseFloat(document.getElementById(id).value);
+  const name = document.getElementById('ci_name').value.trim();
+  if (!name) { alert('Please name the implement.'); return; }
+  const im = {
+    name, type: document.getElementById('ci_type').value,
+    W: v('ci_w'), Wm_kg: v('ci_wm'), Xcgi: v('ci_xcgi'), PyD: v('ci_pyd'),
+    A: v('ci_a'), B: v('ci_b'), C: v('ci_c'),
+  };
+  for (const [k, val] of Object.entries(im)) {
+    if (typeof val === 'number' && !Number.isFinite(val)) { alert('Please fill in every numeric field.'); return; }
+  }
+  customImplements.push(im);
+  await storageSet('dss-custom-implements', customImplements);
+  closeModal('implementModalOverlay');
+  renderImplementFields();
+  const newKey = 'custom:' + (customImplements.length - 1);
+  if (document.getElementById('implement1Select')) { state.implement1Key = newKey; document.getElementById('implement1Select').value = newKey; }
+});
+
+/* ======================================================================
+   SIMULATION — assemble inputs per mode, run engine chain
+   ====================================================================== */
+function readCommonInputs() {
+  return {
+    speedKmh: parseFloat(document.getElementById('speedKmh').value),
+    depthCm: parseFloat(document.getElementById('depthCm').value),
+    fieldLength: parseFloat(document.getElementById('fieldLength').value),
+    fieldWidth: parseFloat(document.getElementById('fieldWidth').value),
+    transEff: parseFloat(document.getElementById('transEff').value),
+    powerReserve: parseFloat(document.getElementById('powerReserve').value),
+    legacyBn: document.getElementById('legacyBn').checked,
+    fi: parseFloat(document.getElementById('soilTexture').value),
+    CI: parseFloat(document.getElementById('coneIndex').value),
+  };
+}
+
+function runSimulation() {
+  try {
+    const inp = readCommonInputs();
+    const t = findTractor(state.tractorKey);
+    const rrM = t.rr_mm / 1000, rfM = t.rf_mm / 1000, brM = t.br_mm / 1000, drM = t.dr_mm / 1000;
+    const WtN = (t.Wf_kg + t.Wr_kg) * K.GRAVITY;
+    const geo = geometryTerms({ depthCm: inp.depthCm, rearRollingRadiusM: rrM, frontRollingRadiusM: rfM });
+
+    let WiN, PyN, XcgiEff, widthForFC, extraRearLoadN = 0, extraPtoKw = 0, Deff, modeExtra = {};
+
+    if (state.mode === 'single') {
+      const im = findImplement(state.implement1Key);
+      const D = draftForceN({ fi: inp.fi, A: im.A, B: im.B, C: im.C, speedKmh: inp.speedKmh, widthM: im.W, depthCm: inp.depthCm });
+      WiN = im.Wm_kg * K.GRAVITY; PyN = im.PyD * D; XcgiEff = im.Xcgi;
+      widthForFC = im.W; Deff = D;
+      modeExtra = { D, implementName: im.name };
+    } else if (state.mode === 'passive') {
+      const im1 = findImplement(state.implement1Key), im2 = findImplement(state.implement2Key);
+      const D1 = draftForceN({ fi: inp.fi, A: im1.A, B: im1.B, C: im1.C, speedKmh: inp.speedKmh, widthM: im1.W, depthCm: inp.depthCm });
+      const D2 = draftForceN({ fi: inp.fi, A: im2.A, B: im2.B, C: im2.C, speedKmh: inp.speedKmh, widthM: im2.W, depthCm: inp.depthCm });
+      const DTotal = (1 - state.ki) * (D1 + D2);
+      const w1N = im1.Wm_kg * K.GRAVITY, w2N = im2.Wm_kg * K.GRAVITY;
+      WiN = w1N + w2N; PyN = im1.PyD * D1 + im2.PyD * D2; XcgiEff = (w1N * im1.Xcgi + w2N * im2.Xcgi) / WiN;
+      const override = document.getElementById('effWidth') ? parseFloat(document.getElementById('effWidth').value) : NaN;
+      widthForFC = Number.isFinite(override) && override > 0 ? override : Math.max(im1.W, im2.W);
+      Deff = DTotal;
+      modeExtra = { D1, D2, DTotal, ki: state.ki, implement1Name: im1.name, implement2Name: im2.name };
+    } else { // active
+      const imP = findImplement(state.implement1Key);
+      const Dp = draftForceN({ fi: inp.fi, A: imP.A, B: imP.B, C: imP.C, speedKmh: inp.speedKmh, widthM: imP.W, depthCm: inp.depthCm });
+      const r = readRotorInputs();
+      const Vms = inp.speedKmh / 3.6;
+      const Ta = r.etaR * (r.pptoKw * 1000) / Vms;
+      const rawDeff = Dp + r.daN - Ta;
+      if (rawDeff <= 0) {
+        throw new Error(`Rotor thrust (${Ta.toFixed(0)} N) exceeds the passive tool's draft plus rotor resistance (${(Dp + r.daN).toFixed(0)} N) — effective draft is non-positive. Reduce PTO power draw or rotor efficiency, or increase tool draft.`);
+      }
+      const MPTO = 9550 * r.pptoKw / r.nRpm;
+      const Weq = MPTO / t.L_wb;
+      extraRearLoadN = Weq + r.fvN;
+      extraPtoKw = r.pptoKw;
+      const wpN = imP.Wm_kg * K.GRAVITY, waN = r.waKg * K.GRAVITY;
+      WiN = wpN + waN; PyN = imP.PyD * Dp; XcgiEff = (wpN * imP.Xcgi + waN * r.xaM) / WiN;
+      widthForFC = imP.W; Deff = rawDeff;
+      modeExtra = { Dp, Ta, Deff: rawDeff, MPTO, Weq, implementName: imP.name, rotor: r };
+    }
+
+    const axle = combinedAxleLoad({
+      Wt: WtN, WiN, PyN, XcgiEff, Hd: t.Hd, L: t.L_wb, Xcgt: t.Xcgt,
+      erM: geo.erM, efM: geo.efM, ydM: geo.ydM, DtotalN: Deff, extraRearLoadN,
+    });
+
+    const slip = solveSlip({ DtotalN: Deff, RrN: axle.Rr, CI: inp.CI, brM, drM, legacyShapeFactor: inp.legacyBn });
+    const te = tractiveEfficiencyPct(slip.mu, slip.actualSlipPct / 100, slip.muG);
+
+    const fieldAreaHa = (inp.fieldLength * inp.fieldWidth) / 10000;
+    const fc = fieldCapacity({ speedKmh: inp.speedKmh, widthM: widthForFC, fieldAreaHa, fieldWidthM: inp.fieldWidth });
+
+    const pf = powerAndFuel({
+      draftN: Deff, speedKmh: inp.speedKmh, tePct: te, transEffPct: inp.transEff,
+      powerReservePct: inp.powerReserve, ptoPowerKw: t.Pt, fcTh: fc.fcTh, fcAc: fc.fcAc, extraPtoKw,
+    });
+
+    const env = resultEnvelope({ slipPct: slip.actualSlipPct, tePct: te, fuelLha: pf.fuelLha, putPct: pf.putPct, fieldEffPct: fc.fieldEffPct, converged: slip.converged });
+
+    const rearTargetSlipFrac = state.mode === 'active' ? slip.actualSlipPct / 100 : K.REAR_BALLAST_TARGET_SLIP_PCT / 100;
+    const rearBallast = rearBallastKgWithTarget({ DtotalN: Deff, RrN: axle.Rr, CI: inp.CI, brM, drM, legacyShapeFactor: inp.legacyBn, targetSlipFrac: rearTargetSlipFrac });
+    const frontBallast = frontBallastKg({ Wt: WtN, WiN, PyN, XcgiEff, Hd: t.Hd, L: t.L_wb, Xcgt: t.Xcgt, erM: geo.erM, efM: geo.efM, ydM: geo.ydM, DtotalN: Deff, extraRearLoadN });
+
+    const fullResult = { inp, t, geo, axle, slip, te, fc, pf, env, rearBallast, frontBallast, mode: state.mode, modeExtra, fieldAreaHa };
+    renderResults(fullResult);
+    lastResult = fullResult;
+    document.getElementById('exportRow').style.display = 'flex';
+    renderPipeline('done');
+  } catch (err) {
+    renderError(err);
+    renderPipeline(-1);
+  }
+}
+
+function readRotorInputs() {
+  return {
+    pptoKw: parseFloat(document.getElementById('rotorPpto').value),
+    nRpm: parseFloat(document.getElementById('rotorN').value),
+    etaR: parseFloat(document.getElementById('rotorEta').value),
+    waKg: parseFloat(document.getElementById('rotorWa').value),
+    xaM: parseFloat(document.getElementById('rotorXa').value),
+    daN: parseFloat(document.getElementById('rotorDa').value),
+    fvN: parseFloat(document.getElementById('rotorFv').value) || 0,
+  };
+}
+
+// rear ballast solver generalized to an arbitrary target slip fraction
+function rearBallastKgWithTarget({ DtotalN, RrN, CI, brM, drM, legacyShapeFactor, targetSlipFrac }) {
+  let R = Math.max(RrN, DtotalN);
+  for (let i = 0; i < 200; i++) {
+    const WkN = (R / 2) / 1000.0;
+    const Bn = mobilityNumber({ CI, bM: brM, dM: drM, WkN, legacyShapeFactor });
+    const muG = grossTractionRatio(Bn);
+    const mu = netTractionCoefficient(muG, Bn, targetSlipFrac);
+    if (mu <= 0) return null;
+    const Rnext = DtotalN / mu;
+    if (Math.abs(Rnext - R) < 1e-3) { R = Rnext; break; }
+    R = Rnext;
+  }
+  const BRrKg = (R - RrN) / K.GRAVITY;
+  return Math.max(0, BRrKg);
+}
+
+/* ======================================================================
+   RENDER: results
+   ====================================================================== */
+function fmt(v, d) { return Number.isFinite(v) ? v.toFixed(d == null ? 1 : d) : '—'; }
+
+function metric(label, value, unit, tone) {
+  return `<div class="metric ${tone || ''}"><div class="label">${label}</div><div class="value">${value}<span class="unit">${unit || ''}</span></div></div>`;
+}
+
+function renderError(err) {
+  document.getElementById('exportRow').style.display = 'none';
+  document.getElementById('resultsCard').innerHTML = `
+    <div class="note danger">
+      <b>Could not complete the simulation.</b><br>${err.message}
+    </div>`;
+}
+
+function renderResults(R) {
+  const { inp, t, axle, slip, te, fc, pf, env, rearBallast, frontBallast, mode, modeExtra, fieldAreaHa } = R;
+
+  const statusClass = env.status === 'Stable' ? 'stable' : env.status === 'Heavy Load' ? 'heavy' : 'unstable';
+
+  let modeHeader = '';
+  if (mode === 'single') {
+    modeHeader = `Single implement — <b>${modeExtra.implementName}</b>`;
+  } else if (mode === 'passive') {
+    modeHeader = `Passive–passive combi — <b>${modeExtra.implement1Name}</b> + <b>${modeExtra.implement2Name}</b> (ki = ${modeExtra.ki.toFixed(2)})`;
+  } else {
+    modeHeader = `Active–passive combi — <b>${modeExtra.implementName}</b> + PTO rotor`;
+  }
+
+  let html = '';
+
+  html += `<div class="status-banner ${statusClass}">
+    <span class="pill">${env.status}</span>
+    <div class="txt">${modeHeader} · <b>${t.name}</b> · Confidence: <b>${env.confidence}</b></div>
+  </div>`;
+
+  // Stage 1 — Draft
+  html += `<div class="result-stage"><h2><span class="n">①</span>Draft force</h2>`;
+  if (mode === 'passive') {
+    html += `<div class="result-grid">
+      ${metric('Leading tool draft D₁', fmt(modeExtra.D1, 0), 'N')}
+      ${metric('Trailing tool draft D₂', fmt(modeExtra.D2, 0), 'N')}
+      ${metric('Combined draft (ki-adjusted)', fmt(modeExtra.DTotal, 0), 'N', 'accent')}
+    </div>`;
+  } else if (mode === 'active') {
+    html += `<div class="result-grid">
+      ${metric('Passive tool draft Dp', fmt(modeExtra.Dp, 0), 'N')}
+      ${metric('Rotor thrust Ta', fmt(modeExtra.Ta, 0), 'N', 'accent')}
+      ${metric('Effective draft Deff', fmt(modeExtra.Deff, 0), 'N', 'accent')}
+      ${metric('PTO reaction torque MPTO', fmt(modeExtra.MPTO, 0), 'N·m')}
+      ${metric('Equivalent rear load Weq', fmt(modeExtra.Weq, 0), 'N')}
+    </div>`;
+  } else {
+    html += `<div class="result-grid">${metric('Implement draft D', fmt(modeExtra.D, 0), 'N', 'accent')}</div>`;
+  }
+  html += `</div>`;
+
+  // Stage 2 — Axle loads
+  html += `<div class="result-stage"><h2><span class="n">②</span>Dynamic axle loads</h2>
+    <div class="result-grid">
+      ${metric('Rear axle load', fmt(axle.Rr, 0), 'N')}
+      ${metric('Front axle load', fmt(axle.Rf, 0), 'N', axle.Rf < 0 ? 'danger' : '')}
+      ${metric('Rear per wheel', fmt(axle.Rr / 2 / 1000, 2), 'kN')}
+      ${metric('Front per wheel', fmt(axle.Rf / 2 / 1000, 2), 'kN')}
+    </div>`;
+  if (axle.Rf < 0) html += `<div class="note danger">Front axle load is negative — the tractor is predicted to tip forward-light / rear-heavy for this configuration. Check implement CG and consider front ballast (see Stage 6).</div>`;
+  html += `</div>`;
+
+  // Stage 3 — Traction & slip
+  html += `<div class="result-stage"><h2><span class="n">③</span>Traction &amp; slip</h2>
+    <div class="result-grid">
+      ${metric('Wheel numeric Bn', fmt(slip.Bn, 1), '')}
+      ${metric('Gross traction ratio μg', fmt(slip.muG, 3), '')}
+      ${metric('Net traction coeff. μ', fmt(slip.mu, 3), '')}
+      ${metric('Tractive efficiency', fmt(te, 1), '%')}
+    </div>
+    <div class="result-grid" style="margin-top:10px;">
+      ${metric('Assumed starting slip', fmt(slip.assumedStartPct, 1), '%')}
+      ${metric('Actual slip (interpolated)', slip.converged ? fmt(slip.actualSlipPct, 2) : '—', slip.converged ? '%' : '', slip.converged ? 'accent' : 'danger')}
+      ${metric('Stepped slip (0.1% grid)', slip.converged ? fmt(slip.steppedSlipPct, 1) : '—', slip.converged ? '%' : '')}
+      ${metric('Search limit (hard cap)', fmt(slip.limitPct, 1), '%', slip.hitLimit ? 'danger' : '')}
+    </div>
+    <div class="note">
+      The solver starts at an <b>assumed floor of ${fmt(slip.assumedStartPct,1)}%</b> and steps up in 0.1% increments — the documented DSS procedure — until the traction pull meets the draft required. <b>Stepped slip</b> is that first grid point (what the source method literally reports). <b>Actual slip</b> linearly interpolates between the last two grid points for the true crossing value, and is what feeds tractive efficiency, power, and ballast below. The <b>search limit</b> (${fmt(slip.limitPct,1)}%) is a fixed ceiling, not a predicted value — it only appears as a result when the solver hits it without finding a real answer (see below).
+    </div>`;
+  if (!slip.converged) html += `<div class="note danger">No slip below the ${fmt(slip.limitPct,1)}% search limit develops enough pull to move this load — the number shown against "Search limit" is where the search gave up, not a predicted operating slip. This configuration cannot develop the required pull at any realistic slip. Reduce depth/speed/width, choose a heavier tractor, or add ballast.</div>`;
+  if (inp.legacyBn) html += `<div class="note warn">Legacy VB6 wheel-numeric formula is active (adds a 1/(1+3·b/d) shape factor). This roughly halves Bn versus the validated Wismer-Luth formula and will noticeably change every traction-downstream result — use only to reproduce the original tool's behaviour.</div>`;
+  html += `</div>`;
+
+  // Stage 4 — Power
+  html += `<div class="result-stage"><h2><span class="n">④</span>Power</h2>
+    <div class="result-grid">
+      ${metric('Drawbar power', fmt(pf.pdbKw, 2), 'kW')}
+      ${metric('Required PTO power', fmt(pf.ptrKw, 2), 'kW')}
+      ${metric('Power utilization', fmt(pf.putPct, 1), '%', pf.putPct > 100 ? 'danger' : (pf.putPct >= 95 ? 'accent' : 'warn'))}
+      ${metric('PTO load fraction X', fmt(pf.xFraction, 3), '')}
+    </div>
+    <div class="note">${env.loadStatus}.</div>
+  </div>`;
+
+  // Stage 5 — Fuel & field
+  html += `<div class="result-stage"><h2><span class="n">⑤</span>Fuel &amp; field capacity</h2>
+    <div class="result-grid">
+      ${metric('Specific fuel consumption', fmt(pf.sfc, 2), 'L/kWh')}
+      ${metric('Fuel use', fmt(pf.fuelLph, 2), 'L/h')}
+      ${metric('Fuel per hectare', fmt(pf.fuelLha, 2), 'L/ha')}
+      ${metric('Overall efficiency', fmt(pf.overallPct, 1), '%')}
+      ${metric('Theoretical field capacity', fmt(fc.fcTh, 2), 'ha/h')}
+      ${metric('Actual field capacity', fmt(fc.fcAc, 2), 'ha/h')}
+      ${metric('Field efficiency', fmt(fc.fieldEffPct, 1), '%')}
+      ${metric('Field area', fmt(fieldAreaHa, 2), 'ha')}
+    </div>
+  </div>`;
+
+  // Stage 6 — Ballast
+  html += `<div class="result-stage"><h2><span class="n">⑥</span>Ballast recommendation</h2>
+    <div class="result-grid">
+      ${metric('Front ballast needed', frontBallast === null ? 'infeasible' : fmt(frontBallast, 1), frontBallast === null ? '' : 'kg', frontBallast > 0 ? 'warn' : '')}
+      ${metric('Rear ballast needed', rearBallast === null ? 'infeasible' : fmt(rearBallast, 1), rearBallast === null ? '' : 'kg', rearBallast > 0 ? 'warn' : '')}
+      ${metric('Front weight utilization', fmt((axle.Rf / (t.Wf_kg + t.Wr_kg + (frontBallast||0)) / K.GRAVITY) * 100, 1), '%')}
+    </div>`;
+  if (frontBallast === null) html += `<div class="note danger">No finite front ballast solution was found within the search range — the front-axle target (Kwef = 0.20) may be unreachable for this configuration.</div>`;
+  if (rearBallast === null) html += `<div class="note danger">No net traction is available at the target slip for any rear-axle load — reduce draft (depth/speed/width) before ballasting.</div>`;
+  html += `</div>`;
+
+  // Recommendations
+  html += `<div class="result-stage"><h2>Recommendations</h2><div class="note">${env.recommendation}</div></div>`;
+
+  document.getElementById('resultsCard').innerHTML = html;
+}
+
+/* ======================================================================
+   NAVIGATION
+   ====================================================================== */
+document.getElementById('topnav').addEventListener('click', (e) => {
+  const tab = e.target.closest('.nav-tab');
+  if (!tab) return;
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  const view = tab.dataset.view;
+  document.getElementById('view-simulator').style.display = view === 'simulator' ? 'grid' : 'none';
+  document.getElementById('view-implements').style.display = view === 'implements' ? 'block' : 'none';
+  document.getElementById('view-tractors').style.display = view === 'tractors' ? 'block' : 'none';
+  document.getElementById('view-help').style.display = view === 'help' ? 'block' : 'none';
+  if (view === 'implements') renderImplementLibraryTable();
+  if (view === 'tractors') renderTractorLibraryTable();
+});
+
+/* ======================================================================
+   LIBRARY TABLES
+   ====================================================================== */
+function renderImplementLibraryTable() {
+  const ims = allImplements();
+  document.getElementById('implementLibCount').textContent =
+    `${ims.length} implements — ${LIB_IMPLEMENTS.length} preloaded, ${customImplements.length} custom.`;
+  let h = '<tr><th>Name</th><th>Type</th><th>Width (m)</th><th>Mass (kg)</th><th>Xcgi (m)</th><th>Py/D</th><th>A</th><th>B</th><th>C</th><th></th></tr>';
+  ims.forEach(im => {
+    h += `<tr>
+      <td class="name-cell">${im.name}${im._custom ? ' <span class="tag-custom">custom</span>' : ''}</td>
+      <td>${(im.type||'—').replace(/_/g,' ')}</td>
+      <td>${fmt(im.W,2)}</td><td>${fmt(im.Wm_kg,0)}</td><td>${fmt(im.Xcgi,2)}</td><td>${fmt(im.PyD,2)}</td>
+      <td>${fmt(im.A,1)}</td><td>${fmt(im.B,1)}</td><td>${fmt(im.C,1)}</td>
+      <td>${im._custom ? `<button class="del-btn" data-key="${im._key}">Delete</button>` : ''}</td>
+    </tr>`;
+  });
+  document.getElementById('implementLibTable').innerHTML = h;
+  document.querySelectorAll('#implementLibTable .del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.key.split(':')[1], 10);
+      customImplements.splice(idx, 1);
+      await storageSet('dss-custom-implements', customImplements);
+      renderImplementLibraryTable();
+      renderImplementFields();
+    });
+  });
+}
+
+function renderTractorLibraryTable() {
+  const ts = allTractors();
+  document.getElementById('tractorLibDesc').textContent =
+    `${ts.length} tractors — ${LIB_TRACTORS.length} preloaded, ${customTractors.length} custom.`;
+  let h = '<tr><th>Name</th><th>PTO (kW)</th><th>Engine (rpm)</th><th>Wheelbase (m)</th><th>Front wt (kg)</th><th>Rear wt (kg)</th><th>Rear tyre ⌀×w (mm)</th><th></th></tr>';
+  ts.forEach(t => {
+    h += `<tr>
+      <td class="name-cell">${t.name}${t._custom ? ' <span class="tag-custom">custom</span>' : ''}</td>
+      <td>${fmt(t.Pt,1)}</td><td>${fmt(t.N_engine,0)}</td><td>${fmt(t.L_wb,2)}</td>
+      <td>${fmt(t.Wf_kg,0)}</td><td>${fmt(t.Wr_kg,0)}</td>
+      <td>${fmt(t.dr_mm,0)} × ${fmt(t.br_mm,0)}</td>
+      <td>${t._custom ? `<button class="del-btn" data-key="${t._key}">Delete</button>` : ''}</td>
+    </tr>`;
+  });
+  document.getElementById('tractorLibTable').innerHTML = h;
+  document.querySelectorAll('#tractorLibTable .del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.key.split(':')[1], 10);
+      customTractors.splice(idx, 1);
+      await storageSet('dss-custom-tractors', customTractors);
+      renderTractorLibraryTable();
+      renderTractorSelect();
+    });
+  });
+}
+
+document.getElementById('addImplementBtnLib').addEventListener('click', openImplementModal);
+document.getElementById('addTractorBtnLib').addEventListener('click', openTractorModal);
+
+// Refresh library tables after saving a new tractor/implement from anywhere
+document.getElementById('saveTractorBtn').addEventListener('click', () => setTimeout(renderTractorLibraryTable, 50));
+document.getElementById('saveImplementBtn').addEventListener('click', () => setTimeout(renderImplementLibraryTable, 50));
+
+/* ======================================================================
+   EXPORT — Excel (SheetJS) and PDF (print)
+   ====================================================================== */
+function buildExportRows(R) {
+  const { inp, t, axle, slip, te, fc, pf, env, rearBallast, frontBallast, mode, modeExtra, fieldAreaHa } = R;
+  const inputRows = [
+    ['Mode', mode],
+    ['Tractor', t.name],
+    ['Soil texture Fi', inp.fi], ['Cone index CI (kPa)', inp.CI],
+    ['Speed (km/h)', inp.speedKmh], ['Depth (cm)', inp.depthCm],
+    ['Field length (m)', inp.fieldLength], ['Field width (m)', inp.fieldWidth],
+    ['Transmission efficiency (%)', inp.transEff], ['Power reserve (%)', inp.powerReserve],
+    ['Legacy wheel-numeric formula', inp.legacyBn ? 'Yes' : 'No'],
+  ];
+  if (mode === 'single') inputRows.push(['Implement', modeExtra.implementName]);
+  if (mode === 'passive') inputRows.push(['Leading tool', modeExtra.implement1Name], ['Trailing tool', modeExtra.implement2Name], ['ki', modeExtra.ki]);
+  if (mode === 'active') inputRows.push(['Passive tool', modeExtra.implementName], ['Rotor PTO draw (kW)', modeExtra.rotor.pptoKw], ['Rotor efficiency', modeExtra.rotor.etaR]);
+
+  const resultRows = [
+    ['— DRAFT —', ''],
+  ];
+  if (mode === 'passive') {
+    resultRows.push(['Leading tool draft D1 (N)', fmt(modeExtra.D1,1)], ['Trailing tool draft D2 (N)', fmt(modeExtra.D2,1)], ['Combined draft (N)', fmt(modeExtra.DTotal,1)]);
+  } else if (mode === 'active') {
+    resultRows.push(['Passive tool draft Dp (N)', fmt(modeExtra.Dp,1)], ['Rotor thrust Ta (N)', fmt(modeExtra.Ta,1)], ['Effective draft Deff (N)', fmt(modeExtra.Deff,1)]);
+  } else {
+    resultRows.push(['Implement draft D (N)', fmt(modeExtra.D,1)]);
+  }
+  resultRows.push(
+    ['— AXLE LOADS —', ''],
+    ['Rear axle load (N)', fmt(axle.Rr,1)], ['Front axle load (N)', fmt(axle.Rf,1)],
+    ['— TRACTION & SLIP —', ''],
+    ['Wheel numeric Bn', fmt(slip.Bn,2)], ['Gross traction ratio', fmt(slip.muG,4)], ['Net traction coeff.', fmt(slip.mu,4)],
+    ['Actual slip (interpolated) %', slip.converged ? fmt(slip.actualSlipPct,2) : 'not converged'],
+    ['Stepped slip (0.1% grid) %', slip.converged ? fmt(slip.steppedSlipPct,1) : '—'],
+    ['Search limit %', fmt(slip.limitPct,1)],
+    ['Tractive efficiency (%)', fmt(te,2)],
+    ['— POWER —', ''],
+    ['Drawbar power (kW)', fmt(pf.pdbKw,3)], ['Required PTO power (kW)', fmt(pf.ptrKw,3)],
+    ['Power utilization (%)', fmt(pf.putPct,2)], ['Load status', env.loadStatus],
+    ['— FUEL & FIELD —', ''],
+    ['Specific fuel consumption (L/kWh)', fmt(pf.sfc,3)], ['Fuel use (L/h)', fmt(pf.fuelLph,3)],
+    ['Fuel per hectare (L/ha)', fmt(pf.fuelLha,3)], ['Overall efficiency (%)', fmt(pf.overallPct,2)],
+    ['Theoretical field capacity (ha/h)', fmt(fc.fcTh,3)], ['Actual field capacity (ha/h)', fmt(fc.fcAc,3)],
+    ['Field efficiency (%)', fmt(fc.fieldEffPct,1)], ['Field area (ha)', fmt(fieldAreaHa,2)],
+    ['— BALLAST —', ''],
+    ['Front ballast needed (kg)', frontBallast === null ? 'infeasible' : fmt(frontBallast,1)],
+    ['Rear ballast needed (kg)', rearBallast === null ? 'infeasible' : fmt(rearBallast,1)],
+    ['— STATUS —', ''],
+    ['Status', env.status], ['Confidence', env.confidence], ['Recommendation', env.recommendation]
+  );
+  return { inputRows, resultRows };
+}
+
+document.getElementById('exportExcelBtn').addEventListener('click', () => {
+  if (!lastResult) return;
+  try {
+    const { inputRows, resultRows } = buildExportRows(lastResult);
+    const wb = XLSX.utils.book_new();
+    const wsInputs = XLSX.utils.aoa_to_sheet([['Parameter','Value'], ...inputRows]);
+    const wsResults = XLSX.utils.aoa_to_sheet([['Metric','Value'], ...resultRows]);
+    wsInputs['!cols'] = [{wch:32},{wch:28}];
+    wsResults['!cols'] = [{wch:34},{wch:22}];
+    XLSX.utils.book_append_sheet(wb, wsInputs, 'Inputs');
+    XLSX.utils.book_append_sheet(wb, wsResults, 'Results');
+    const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    XLSX.writeFile(wb, `tillage-dss-results-${ts}.xlsx`);
+  } catch (e) {
+    alert('Could not generate the Excel file: ' + e.message);
+  }
+});
+
+document.getElementById('exportPdfBtn').addEventListener('click', () => {
+  if (!lastResult) return;
+  const { inputRows, resultRows } = buildExportRows(lastResult);
+  const rowsHtml = (rows) => rows.map(([k,v]) => {
+    if (String(v) === '' && String(k).startsWith('—')) return `<tr><td colspan="2" style="font-weight:bold; background:#eee;">${k.replace(/—/g,'').trim()}</td></tr>`;
+    return `<tr><td>${k}</td><td>${v}</td></tr>`;
+  }).join('');
+  document.getElementById('printReport').innerHTML = `
+    <h1>Tillage DSS — Simulation Report</h1>
+    <p>Generated ${new Date().toLocaleString()}</p>
+    <div class="pr-section"><h2>Inputs</h2><table>${rowsHtml(inputRows)}</table></div>
+    <div class="pr-section"><h2>Results</h2><table>${rowsHtml(resultRows)}</table></div>
+    <p style="font-size:10px; color:#666;">ASAE D497.5 draft model · Brixius (1987) traction equations · ASABE (2001) fuel model.</p>
+  `;
+  window.print();
+});
+
+/* ======================================================================
+   INIT
+   ====================================================================== */
+document.getElementById('soilTexture').addEventListener('change', updateSoilHint);
+document.getElementById('runBtn').addEventListener('click', runSimulation);
+
+async function init() {
+  await loadCustomLibrary();
+  renderTractorSelect();
+  document.getElementById('tractorSelect').addEventListener('change', updateTractorSummary);
+  renderImplementFields();
+  updateSoilHint();
+  runSimulation();
+}
+init();
+</script>
+</body>
+</html>

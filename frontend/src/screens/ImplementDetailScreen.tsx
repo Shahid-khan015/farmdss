@@ -16,6 +16,7 @@ import { ErrorMessage } from '../components/common/ErrorMessage';
 import { useDeleteImplement, useImplement } from '../hooks/useImplements';
 import { useSimulations } from '../hooks/useSimulations';
 import { fmtNum } from '../utils/formatters';
+import { isActiveImplement } from '../constants/enums';
 
 export function ImplementDetailScreen() {
   const nav = useNavigation<any>();
@@ -31,6 +32,7 @@ export function ImplementDetailScreen() {
   if (!impQ.data) return <ErrorMessage message="Implement not found." />;
 
   const i = impQ.data;
+  const isPowered = isActiveImplement(i.implement_type);
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
@@ -73,9 +75,25 @@ export function ImplementDetailScreen() {
           <Text style={styles.specLabel}>V/H Ratio</Text>
           <Text style={styles.specValue}>{fmtNum(i.vertical_horizontal_ratio)}</Text>
         </View>
+        {i.number_of_tools != null && (
+          <View style={styles.specRow}>
+            {/* For tined implements this - not the width in metres - is the W in
+                the ASABE draft equation, so it belongs on the detail page. */}
+            <Text style={styles.specLabel}>Number of Tines</Text>
+            <Text style={styles.specValue}>{i.number_of_tools}</Text>
+          </View>
+        )}
+        {!!i.configuration && (
+          <View style={styles.specRow}>
+            <Text style={styles.specLabel}>Configuration</Text>
+            <Text style={styles.specValue}>{i.configuration}</Text>
+          </View>
+        )}
       </CollapsibleSection>
 
-      {/* ASAE Parameters Section */}
+      {/* ASAE Parameters - passive tools only. Powered tools carry no A/B/C:
+          their contribution comes from the rotor sub-model below. */}
+      {!isPowered && (
       <CollapsibleSection title="ASAE Parameters" icon="settings" defaultExpanded={false}>
         <View style={styles.specRow}>
           <Text style={styles.specLabel}>Parameter A</Text>
@@ -90,6 +108,36 @@ export function ImplementDetailScreen() {
           <Text style={styles.specValue}>{fmtNum(i.asae_param_c)}</Text>
         </View>
       </CollapsibleSection>
+      )}
+
+      {/* Rotor Specifications - these are what actually define a powered tool;
+          without them it cannot fill the rotor slot of an active-passive run. */}
+      {isPowered && (
+        <CollapsibleSection title="Rotor Specifications" icon="settings" defaultExpanded>
+          <View style={styles.specRow}>
+            <Text style={styles.specLabel}>Mechanical Resistance (Da)</Text>
+            <Text style={styles.specValue}>{fmtNum(i.rotor_mechanical_resistance)} N</Text>
+          </View>
+          <View style={styles.specRow}>
+            <Text style={styles.specLabel}>Rotor Efficiency (eta_r)</Text>
+            <Text style={styles.specValue}>{fmtNum(i.rotor_efficiency)}</Text>
+          </View>
+          <View style={styles.specRow}>
+            <Text style={styles.specLabel}>PTO Power Draw (P_PTO)</Text>
+            <Text style={styles.specValue}>{fmtNum(i.rotor_pto_power)} kW</Text>
+          </View>
+          <View style={styles.specRow}>
+            <Text style={styles.specLabel}>Rotor Speed (N)</Text>
+            <Text style={styles.specValue}>{fmtNum(i.rotor_speed)} rpm</Text>
+          </View>
+          <View style={styles.specRow}>
+            <Text style={styles.specLabel}>Dynamic Vertical Force (Fv)</Text>
+            <Text style={styles.specValue}>
+              {i.rotor_dynamic_vertical_force == null ? '0 (not set)' : `${fmtNum(i.rotor_dynamic_vertical_force)} N`}
+            </Text>
+          </View>
+        </CollapsibleSection>
+      )}
 
       {/* Action Button */}
       <View style={styles.actionButtons}>

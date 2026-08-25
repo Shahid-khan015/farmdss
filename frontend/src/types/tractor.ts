@@ -4,6 +4,9 @@ export type TireSpecification = {
   id: string;
   tractor_id: string;
   tire_type: TireType;
+  /** Tyre size designation, e.g. "12.4 x 28". The only field the diameter can be checked against. */
+  front_tire_size?: string | null;
+  rear_tire_size?: string | null;
   front_overall_diameter?: number | null;
   front_section_width?: number | null;
   front_static_loaded_radius?: number | null;

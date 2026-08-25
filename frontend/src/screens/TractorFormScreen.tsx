@@ -22,10 +22,15 @@ import { ErrorMessage } from '../components/common/ErrorMessage';
 import { useTractor, useUpsertTractor } from '../hooks/useTractors';
 import { required, toNumber } from '../utils/validators';
 
-function toInteger(value: string) {
-  const n = Number(value);
+// Tyre dimensions are stored to 2 dp. Real specs carry fractional millimetres
+// (a 12.4 x 28 is 1226.31 mm, 314.96 mm wide), and rounding them measurably
+// shifts the wheel numeric and everything downstream of it.
+function toMillimetres(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed);
   if (!Number.isFinite(n)) return null;
-  return Math.round(n);
+  return Math.round(n * 100) / 100;
 }
 
 function validateOptionalNonNegativeNumber(value: string, label: string) {
@@ -41,8 +46,29 @@ function validateOptionalNonNegativeInteger(value: string, label: string) {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const n = Number(trimmed);
-  if (!Number.isFinite(n) || !Number.isInteger(n)) return `${label} must be a whole number`;
+  if (!Number.isFinite(n)) return `${label} must be a valid number`;
   if (n < 0) return `${label} must be >= 0`;
+  return null;
+}
+
+// Fields the simulation engine hard-requires. Leaving them blank used to save
+// happily and then fail every simulation with a 422 listing fields the user was
+// never asked for, so the check belongs here, at the point of entry.
+function validateRequiredPositiveNumber(value: string, label: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return `${label} is required to run simulations`;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return `${label} must be a valid number`;
+  if (n <= 0) return `${label} must be greater than 0`;
+  return null;
+}
+
+function validateRequiredPositiveInteger(value: string, label: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return `${label} is required to run simulations`;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return `${label} must be a valid number`;
+  if (n <= 0) return `${label} must be greater than 0`;
   return null;
 }
 
@@ -74,6 +100,8 @@ export function TractorFormScreen() {
   const [powerReserve, setPowerReserve] = useState('');
 
   const [tireType, setTireType] = useState<TireType>('Bias Ply');
+  const [frontSize, setFrontSize] = useState('');
+  const [rearSize, setRearSize] = useState('');
   const [frontOD, setFrontOD] = useState('');
   const [frontSW, setFrontSW] = useState('');
   const [frontSLR, setFrontSLR] = useState('');
@@ -82,10 +110,15 @@ export function TractorFormScreen() {
   const [rearSW, setRearSW] = useState('');
   const [rearSLR, setRearSLR] = useState('');
   const [rearRR, setRearRR] = useState('');
-  const [touched, setTouched] = useState({
-    name: false,
-    model: false,
-  });
+  // Validation runs continuously, but a result is only shown once the user has
+  // left the field or tried to save. Without this the "add" form opens with
+  // every required field already red, before anything has been typed.
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [showErrors, setShowErrors] = useState(false);
+  const markTouched = (field: string) => () =>
+    setTouched((t) => ({ ...t, [field]: true }));
+  const showError = (field: string): string | undefined =>
+    showErrors || touched[field] ? errors[field] ?? undefined : undefined;
 
   useEffect(() => {
     const t = id ? tractorQ.data : initial;
@@ -109,6 +142,8 @@ export function TractorFormScreen() {
 
     if (t.tire_specification) {
       setTireType(t.tire_specification.tire_type);
+      setFrontSize(t.tire_specification.front_tire_size ?? '');
+      setRearSize(t.tire_specification.rear_tire_size ?? '');
       setFrontOD(t.tire_specification.front_overall_diameter?.toString() ?? '');
       setFrontSW(t.tire_specification.front_section_width?.toString() ?? '');
       setFrontSLR(t.tire_specification.front_static_loaded_radius?.toString() ?? '');
@@ -124,26 +159,54 @@ export function TractorFormScreen() {
     const e: Record<string, string | null> = {};
     e.name = required(name.trim(), 'Name');
     e.model = required(model.trim(), 'Model');
-    e.ptoPower = validateOptionalNonNegativeNumber(ptoPower, 'PTO Power');
+    // --- required by the simulation engine ---
+    e.ptoPower = validateRequiredPositiveNumber(ptoPower, 'PTO Power');
+    e.wheelbase = validateRequiredPositiveNumber(wheelbase, 'Wheelbase');
+    e.frontAxleWeight = validateRequiredPositiveNumber(frontAxleWeight, 'Front Axle Weight');
+    e.rearAxleWeight = validateRequiredPositiveNumber(rearAxleWeight, 'Rear Axle Weight');
+    e.hitchDistance = validateRequiredPositiveNumber(hitchDistance, 'Hitch Distance from Rear');
+    e.cgFromRear = validateRequiredPositiveNumber(cgFromRear, 'CG Distance from Rear Axle');
+    e.transEff = validateRequiredPositiveNumber(transEff, 'Transmission Efficiency');
+    e.powerReserve = validateOptionalNonNegativeNumber(powerReserve, 'Power Reserve');
+    if (!e.powerReserve && !powerReserve.trim()) e.powerReserve = 'Power Reserve is required to run simulations';
+
+    e.frontOD = validateRequiredPositiveInteger(frontOD, 'Front Overall Diameter');
+    e.frontSW = validateRequiredPositiveInteger(frontSW, 'Front Section Width');
+    e.rearOD = validateRequiredPositiveInteger(rearOD, 'Rear Overall Diameter');
+    e.rearSW = validateRequiredPositiveInteger(rearSW, 'Rear Section Width');
+
+    // --- optional diagnostics / fallbacks ---
     e.ratedSpeed = validateOptionalNonNegativeInteger(ratedSpeed, 'Rated Engine Speed');
     e.maxTorque = validateOptionalNonNegativeNumber(maxTorque, 'Maximum Engine Torque');
-    e.wheelbase = validateOptionalNonNegativeNumber(wheelbase, 'Wheelbase');
-    e.frontAxleWeight = validateOptionalNonNegativeNumber(frontAxleWeight, 'Front Axle Weight');
-    e.rearAxleWeight = validateOptionalNonNegativeNumber(rearAxleWeight, 'Rear Axle Weight');
-    e.hitchDistance = validateOptionalNonNegativeNumber(hitchDistance, 'Hitch Distance from Rear');
-    e.cgFromRear = validateOptionalNonNegativeNumber(cgFromRear, 'CG Distance from Rear Axle');
     e.rearRollingRadius = validateOptionalNonNegativeNumber(rearRollingRadius, 'Rear Wheel Rolling Radius');
-    e.transEff = validateOptionalNonNegativeNumber(transEff, 'Transmission Efficiency');
-    e.powerReserve = validateOptionalNonNegativeNumber(powerReserve, 'Power Reserve');
-
-    e.frontOD = validateOptionalNonNegativeInteger(frontOD, 'Front Overall Diameter');
-    e.frontSW = validateOptionalNonNegativeInteger(frontSW, 'Front Section Width');
     e.frontSLR = validateOptionalNonNegativeInteger(frontSLR, 'Front Static Loaded Radius');
     e.frontRR = validateOptionalNonNegativeInteger(frontRR, 'Front Rolling Radius');
-    e.rearOD = validateOptionalNonNegativeInteger(rearOD, 'Rear Overall Diameter');
-    e.rearSW = validateOptionalNonNegativeInteger(rearSW, 'Rear Section Width');
     e.rearSLR = validateOptionalNonNegativeInteger(rearSLR, 'Rear Static Loaded Radius');
     e.rearRR = validateOptionalNonNegativeInteger(rearRR, 'Rear Rolling Radius');
+
+    // A rolling radius must be resolvable on each axle: the engine falls back
+    // SLR -> tractor rear radius, but with none of them set the run 422s.
+    if (!frontRR.trim() && !frontSLR.trim()) {
+      e.frontRR = 'Enter a front rolling radius or static loaded radius';
+    }
+    if (!rearRR.trim() && !rearSLR.trim() && !rearRollingRadius.trim()) {
+      e.rearRR = 'Enter a rear rolling radius or static loaded radius';
+    }
+
+    // Static balance: Xcgt must equal Wf*L/(Wf+Wr). Catching it here prevents the
+    // class of error that made every seeded tractor internally inconsistent.
+    const L = Number(wheelbase);
+    const wf = Number(frontAxleWeight);
+    const wr = Number(rearAxleWeight);
+    const cg = Number(cgFromRear);
+    if ([L, wf, wr, cg].every((v) => Number.isFinite(v) && v > 0)) {
+      const expected = (wf * L) / (wf + wr);
+      if (Math.abs(cg - expected) > 0.05 * expected) {
+        e.cgFromRear =
+          `CG should be about ${expected.toFixed(2)} m for these axle weights ` +
+          `(Wf x wheelbase / total). Check the value or the axle weights.`;
+      }
+    }
     return e;
   }, [
     name,
@@ -172,7 +235,12 @@ export function TractorFormScreen() {
   const canSubmit = Object.values(errors).every((v) => !v) && !saving;
 
   const handleSave = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit) {
+      // The button stays pressable so it can explain itself; a disabled control
+      // with no reason is how the user gets stuck.
+      setShowErrors(true);
+      return;
+    }
 
     const payload: any = {
       name: name.trim(),
@@ -195,14 +263,16 @@ export function TractorFormScreen() {
 
     const tire = {
       tire_type: tireType,
-      front_overall_diameter: toInteger(frontOD),
-      front_section_width: toInteger(frontSW),
-      front_static_loaded_radius: toInteger(frontSLR),
-      front_rolling_radius: toInteger(frontRR),
-      rear_overall_diameter: toInteger(rearOD),
-      rear_section_width: toInteger(rearSW),
-      rear_static_loaded_radius: toInteger(rearSLR),
-      rear_rolling_radius: toInteger(rearRR),
+      front_tire_size: frontSize.trim() || null,
+      rear_tire_size: rearSize.trim() || null,
+      front_overall_diameter: toMillimetres(frontOD),
+      front_section_width: toMillimetres(frontSW),
+      front_static_loaded_radius: toMillimetres(frontSLR),
+      front_rolling_radius: toMillimetres(frontRR),
+      rear_overall_diameter: toMillimetres(rearOD),
+      rear_section_width: toMillimetres(rearSW),
+      rear_static_loaded_radius: toMillimetres(rearSLR),
+      rear_rolling_radius: toMillimetres(rearRR),
     };
 
     if (!id) {
@@ -249,9 +319,9 @@ export function TractorFormScreen() {
           placeholder="e.g., John Deere #1"
           value={name}
           onChangeText={setName}
-          onBlur={() => setTouched((t) => ({ ...t, name: true }))}
-          error={touched.name && !!errors.name}
-          helperText={touched.name ? errors.name ?? undefined : undefined}
+          onBlur={markTouched('name')}
+          error={!!showError('name')}
+          helperText={showError('name')}
           containerStyle={styles.field}
         />
 
@@ -267,9 +337,9 @@ export function TractorFormScreen() {
           placeholder="e.g., 5100M"
           value={model}
           onChangeText={setModel}
-          onBlur={() => setTouched((t) => ({ ...t, model: true }))}
-          error={touched.model && !!errors.model}
-          helperText={touched.model ? errors.model ?? undefined : undefined}
+          onBlur={markTouched('model')}
+          error={!!showError('model')}
+          helperText={showError('model')}
           containerStyle={styles.field}
         />
 
@@ -304,32 +374,35 @@ export function TractorFormScreen() {
         <Input
           label="PTO Power"
           required
-          labelHint="> 10 kW to simulate"
+          labelHint="> 10 kW to simulate"
           value={ptoPower}
           onChangeText={setPtoPower}
           keyboardType="decimal-pad"
           unit={"kW"}
-          error={!!errors.ptoPower}
-          helperText={errors.ptoPower ?? 'Rated PTO power. Simulations reject tractors at or below 10 kW.'}
+          onBlur={markTouched('ptoPower')}
+          error={!!showError('ptoPower')}
+          helperText={showError('ptoPower') ?? 'Rated PTO power. Simulations reject tractors at or below 10 kW.'}
           containerStyle={styles.field}
         />
         <Input
-          label="Rated Engine Speed"
+          label="Rated Engine Speed"
           value={ratedSpeed}
           onChangeText={setRatedSpeed}
-          keyboardType="number-pad"
+          keyboardType="decimal-pad"
           unit={"rpm"}
-          error={!!errors.ratedSpeed}
-          helperText={errors.ratedSpeed ?? undefined}
+          onBlur={markTouched('ratedSpeed')}
+          error={!!showError('ratedSpeed')}
+          helperText={showError('ratedSpeed') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Maximum Engine Torque"
+          label="Maximum Engine Torque"
           value={maxTorque}
           onChangeText={setMaxTorque}
           keyboardType="decimal-pad"
-          error={!!errors.maxTorque}
-          helperText={errors.maxTorque ?? undefined}
+          onBlur={markTouched('maxTorque')}
+          error={!!showError('maxTorque')}
+          helperText={showError('maxTorque') ?? undefined}
           unit={"N·m"}
           containerStyle={styles.field}
         />
@@ -338,63 +411,69 @@ export function TractorFormScreen() {
       {/* Geometry & Weight Section */}
       <CollapsibleSection title="Geometry & Weight" icon="square" defaultExpanded={false}>
         <Input
-          label="Wheelbase"
+          label="Wheelbase"
           value={wheelbase}
           onChangeText={setWheelbase}
           keyboardType="decimal-pad"
           unit={"m"}
-          error={!!errors.wheelbase}
-          helperText={errors.wheelbase ?? undefined}
+          onBlur={markTouched('wheelbase')}
+          error={!!showError('wheelbase')}
+          helperText={showError('wheelbase') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Front Axle Weight"
+          label="Front Axle Weight"
           value={frontAxleWeight}
           onChangeText={setFrontAxleWeight}
           keyboardType="decimal-pad"
           unit={"kg"}
-          error={!!errors.frontAxleWeight}
-          helperText={errors.frontAxleWeight ?? undefined}
+          onBlur={markTouched('frontAxleWeight')}
+          error={!!showError('frontAxleWeight')}
+          helperText={showError('frontAxleWeight') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Rear Axle Weight"
+          label="Rear Axle Weight"
           value={rearAxleWeight}
           onChangeText={setRearAxleWeight}
           keyboardType="decimal-pad"
           unit={"kg"}
-          error={!!errors.rearAxleWeight}
-          helperText={errors.rearAxleWeight ?? undefined}
+          onBlur={markTouched('rearAxleWeight')}
+          error={!!showError('rearAxleWeight')}
+          helperText={showError('rearAxleWeight') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Hitch Distance from Rear"
+          label="Hitch Distance from Rear"
           value={hitchDistance}
           onChangeText={setHitchDistance}
           keyboardType="decimal-pad"
           unit={"m"}
-          error={!!errors.hitchDistance}
-          helperText={errors.hitchDistance ?? undefined}
+          onBlur={markTouched('hitchDistance')}
+          error={!!showError('hitchDistance')}
+          helperText={showError('hitchDistance') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="CG Distance from Rear Axle"
+          label="CG Distance from Rear Axle"
           value={cgFromRear}
           onChangeText={setCgFromRear}
           keyboardType="decimal-pad"
           unit={"m"}
-          error={!!errors.cgFromRear}
-          helperText={errors.cgFromRear ?? undefined}
+          onBlur={markTouched('cgFromRear')}
+          error={!!showError('cgFromRear')}
+          helperText={showError('cgFromRear') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Rear Wheel Rolling Radius"
+          label="Rear Wheel Rolling Radius"
           value={rearRollingRadius}
           onChangeText={setRearRollingRadius}
           keyboardType="decimal-pad"
           unit={"m"}
-          error={!!errors.rearRollingRadius}
-          helperText={errors.rearRollingRadius ?? undefined}
+          onBlur={markTouched('rearRollingRadius')}
+          error={!!showError('rearRollingRadius')}
+          helperText={showError('rearRollingRadius') ?? undefined}
           containerStyle={styles.field}
         />
       </CollapsibleSection>
@@ -402,23 +481,25 @@ export function TractorFormScreen() {
       {/* Powertrain Settings Section */}
       <CollapsibleSection title="Powertrain Settings" icon="settings" defaultExpanded={false}>
         <Input
-          label="Transmission Efficiency"
+          label="Transmission Efficiency"
           value={transEff}
           onChangeText={setTransEff}
           keyboardType="decimal-pad"
           unit={"%"}
-          error={!!errors.transEff}
-          helperText={errors.transEff ?? undefined}
+          onBlur={markTouched('transEff')}
+          error={!!showError('transEff')}
+          helperText={showError('transEff') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Power Reserve"
+          label="Power Reserve"
           value={powerReserve}
           onChangeText={setPowerReserve}
           keyboardType="decimal-pad"
           unit={"%"}
-          error={!!errors.powerReserve}
-          helperText={errors.powerReserve ?? undefined}
+          onBlur={markTouched('powerReserve')}
+          error={!!showError('powerReserve')}
+          helperText={showError('powerReserve') ?? undefined}
           containerStyle={styles.field}
         />
       </CollapsibleSection>
@@ -462,85 +543,113 @@ export function TractorFormScreen() {
 
         <Text style={styles.subSectionTitle}>Front Tire</Text>
         <Input
-          label="Overall Diameter"
+          label="Tyre Size"
+          value={frontSize}
+          onChangeText={setFrontSize}
+          autoCapitalize="none"
+          helperText='Designation, e.g. "12.4 x 28" - first number is the section width in inches, second the rim diameter.'
+          containerStyle={styles.field}
+        />
+        <Input
+          label="Overall Diameter"
+          required
           value={frontOD}
           onChangeText={setFrontOD}
-          keyboardType="number-pad"
+          keyboardType="decimal-pad"
           unit={"mm"}
-          error={!!errors.frontOD}
-          helperText={errors.frontOD ?? undefined}
+          onBlur={markTouched('frontOD')}
+          error={!!showError('frontOD')}
+          helperText={showError('frontOD') ?? "Full inflated tyre diameter, NOT the rim size. A 12.4 x 28 tyre is about 1226 mm, not 711. Entering the rim understates traction badly."}
           containerStyle={styles.field}
         />
         <Input
-          label="Section Width"
+          label="Section Width"
+          required
           value={frontSW}
           onChangeText={setFrontSW}
-          keyboardType="number-pad"
+          keyboardType="decimal-pad"
           unit={"mm"}
-          error={!!errors.frontSW}
-          helperText={errors.frontSW ?? undefined}
+          onBlur={markTouched('frontSW')}
+          error={!!showError('frontSW')}
+          helperText={showError('frontSW') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Static Loaded Radius"
+          label="Static Loaded Radius"
           value={frontSLR}
           onChangeText={setFrontSLR}
-          keyboardType="number-pad"
+          keyboardType="decimal-pad"
           unit={"mm"}
-          error={!!errors.frontSLR}
-          helperText={errors.frontSLR ?? undefined}
+          onBlur={markTouched('frontSLR')}
+          error={!!showError('frontSLR')}
+          helperText={showError('frontSLR') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Rolling Radius"
+          label="Rolling Radius"
           value={frontRR}
           onChangeText={setFrontRR}
-          keyboardType="number-pad"
+          keyboardType="decimal-pad"
           unit={"mm"}
-          error={!!errors.frontRR}
-          helperText={errors.frontRR ?? undefined}
+          onBlur={markTouched('frontRR')}
+          error={!!showError('frontRR')}
+          helperText={showError('frontRR') ?? undefined}
           containerStyle={styles.field}
         />
 
         <Text style={styles.subSectionTitle}>Rear Tire</Text>
         <Input
-          label="Overall Diameter"
+          label="Tyre Size"
+          value={rearSize}
+          onChangeText={setRearSize}
+          autoCapitalize="none"
+          helperText='Designation, e.g. "12.4 x 28" - first number is the section width in inches, second the rim diameter.'
+          containerStyle={styles.field}
+        />
+        <Input
+          label="Overall Diameter"
+          required
           value={rearOD}
           onChangeText={setRearOD}
-          keyboardType="number-pad"
+          keyboardType="decimal-pad"
           unit={"mm"}
-          error={!!errors.rearOD}
-          helperText={errors.rearOD ?? undefined}
+          onBlur={markTouched('rearOD')}
+          error={!!showError('rearOD')}
+          helperText={showError('rearOD') ?? "Full inflated tyre diameter, NOT the rim size. A 12.4 x 28 tyre is about 1226 mm, not 711. Entering the rim understates traction badly."}
           containerStyle={styles.field}
         />
         <Input
-          label="Section Width"
+          label="Section Width"
+          required
           value={rearSW}
           onChangeText={setRearSW}
-          keyboardType="number-pad"
+          keyboardType="decimal-pad"
           unit={"mm"}
-          error={!!errors.rearSW}
-          helperText={errors.rearSW ?? undefined}
+          onBlur={markTouched('rearSW')}
+          error={!!showError('rearSW')}
+          helperText={showError('rearSW') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Static Loaded Radius"
+          label="Static Loaded Radius"
           value={rearSLR}
           onChangeText={setRearSLR}
-          keyboardType="number-pad"
+          keyboardType="decimal-pad"
           unit={"mm"}
-          error={!!errors.rearSLR}
-          helperText={errors.rearSLR ?? undefined}
+          onBlur={markTouched('rearSLR')}
+          error={!!showError('rearSLR')}
+          helperText={showError('rearSLR') ?? undefined}
           containerStyle={styles.field}
         />
         <Input
-          label="Rolling Radius"
+          label="Rolling Radius"
           value={rearRR}
           onChangeText={setRearRR}
-          keyboardType="number-pad"
+          keyboardType="decimal-pad"
           unit={"mm"}
-          error={!!errors.rearRR}
-          helperText={errors.rearRR ?? undefined}
+          onBlur={markTouched('rearRR')}
+          error={!!showError('rearRR')}
+          helperText={showError('rearRR') ?? undefined}
           containerStyle={styles.field}
         />
       </CollapsibleSection>
@@ -563,7 +672,7 @@ export function TractorFormScreen() {
           variant="primary"
           size="lg"
           fullWidth
-          disabled={!canSubmit}
+          disabled={saving}
           loading={saving}
           onPress={handleSave}
         >

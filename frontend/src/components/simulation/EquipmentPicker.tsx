@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Feather } from '@expo/vector-icons';
 
@@ -7,6 +7,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { EmptyState } from '../common/EmptyState';
 import { formatQuantity } from '../../theme/units';
 import type { Readiness } from '../../utils/simulationReadiness';
+import { groupBadge, groupLabel, type EquipmentGroup } from '../../utils/equipmentLabels';
 
 export type EquipmentOption = {
   id: string;
@@ -14,6 +15,12 @@ export type EquipmentOption = {
   subtitle?: string;
   /** Short spec line, e.g. "45 kW · 2.3 m wheelbase". */
   spec?: string;
+  /** Which list this belongs to: the user's own equipment, or shared library
+   *  data. Omitted for lists where the distinction does not apply (presets),
+   *  which then render as a single unsectioned list with no badges. */
+  group?: EquipmentGroup;
+  /** Set only when the title alone does not identify the row within its group. */
+  disambiguator?: string;
   readiness: Readiness;
 };
 
@@ -51,9 +58,39 @@ export function EquipmentPicker({
 }: Props) {
   const { colors, spacing, radius, typography } = useTheme();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
 
   const selected = useMemo(() => options.find((o) => o.id === value), [options, value]);
   const tone = error ? colors.status.critical : null;
+
+  /** Sections, "My equipment" first. Empty sections are dropped so a
+   *  library-only account never sees a stray header. */
+  const sections = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const match = (o: EquipmentOption) =>
+      !needle ||
+      o.title.toLowerCase().includes(needle) ||
+      (o.subtitle ?? '').toLowerCase().includes(needle);
+    const visible = options.filter(match);
+    if (!visible.some((o) => o.group)) return [{ group: undefined, items: visible }];
+    return (['mine', 'library'] as EquipmentGroup[])
+      .map((group) => ({ group: group as EquipmentGroup | undefined, items: visible.filter((o) => o.group === group) }))
+      .filter((section) => section.items.length > 0);
+  }, [options, query]);
+
+  const badgeStyle = (group: EquipmentGroup) =>
+    group === 'mine' ? colors.status.info : colors.status.neutral;
+
+  const Badge = ({ group }: { group: EquipmentGroup }) => (
+    <View
+      style={[
+        styles.badge,
+        { backgroundColor: badgeStyle(group).surface, borderColor: badgeStyle(group).border },
+      ]}
+    >
+      <Text style={[typography.caption, { color: badgeStyle(group).text }]}>{groupBadge(group)}</Text>
+    </View>
+  );
 
   return (
     <View style={{ gap: spacing.xs }}>
@@ -78,10 +115,17 @@ export function EquipmentPicker({
         <View style={{ flex: 1, gap: 2 }}>
           {selected ? (
             <>
-              <Text style={[typography.bodyLarge, { color: colors.textPrimary }]}>
-                {selected.title}
-              </Text>
-              {selected.spec ? (
+              <View style={styles.titleRow}>
+                <Text style={[typography.bodyLarge, { color: colors.textPrimary }]} numberOfLines={1}>
+                  {selected.title}
+                </Text>
+                {selected.group ? <Badge group={selected.group} /> : null}
+              </View>
+              {selected.disambiguator ? (
+                <Text style={[typography.bodySmall, { color: colors.textSecondary }]}>
+                  {selected.disambiguator}
+                </Text>
+              ) : selected.spec ? (
                 <Text style={[typography.bodySmall, { color: colors.textTertiary }]}>
                   {selected.spec}
                 </Text>
@@ -128,6 +172,28 @@ export function EquipmentPicker({
               </Pressable>
             </View>
 
+            {options.length > 6 ? (
+              <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Search by name"
+                  placeholderTextColor={colors.textTertiary}
+                  accessibilityLabel={`Search ${label}`}
+                  style={[
+                    styles.search,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      borderRadius: radius.md,
+                      color: colors.textPrimary,
+                      paddingHorizontal: spacing.md,
+                    },
+                  ]}
+                />
+              </View>
+            ) : null}
+
             <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.sm }}>
               {options.length === 0 ? (
                 <EmptyState
@@ -144,8 +210,24 @@ export function EquipmentPicker({
                       : undefined
                   }
                 />
+              ) : sections.length === 0 ? (
+                <Text style={[typography.bodySmall, { color: colors.textTertiary }]}>
+                  Nothing matches “{query}”.
+                </Text>
               ) : (
-                options.map((option) => {
+                sections.map((section) => (
+                <View key={section.group ?? 'all'} style={{ gap: spacing.sm }}>
+                  {section.group ? (
+                    <Text
+                      style={[
+                        typography.caption,
+                        { color: colors.textSecondary, marginTop: spacing.xs, letterSpacing: 0.6 },
+                      ]}
+                    >
+                      {groupLabel(section.group).toUpperCase()}
+                    </Text>
+                  ) : null}
+                {section.items.map((option) => {
                   const excluded = excludeIds.includes(option.id);
                   const blockers = option.readiness.issues.filter((i) => i.severity === 'blocker');
                   const selectable = option.readiness.ready && !excluded;
@@ -163,7 +245,9 @@ export function EquipmentPicker({
                       accessibilityState={{ selected: isSelected, disabled: !selectable }}
                       accessibilityLabel={
                         selectable
-                          ? option.title
+                          ? [option.title, option.group ? groupBadge(option.group) : null, option.disambiguator]
+                              .filter(Boolean)
+                              .join(', ')
                           : `${option.title}, unavailable: ${
                               excluded ? 'already selected' : blockers[0]?.message ?? 'incomplete'
                             }`
@@ -180,9 +264,15 @@ export function EquipmentPicker({
                       ]}
                     >
                       <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={[typography.bodyLarge, { color: colors.textPrimary }]}>
-                          {option.title}
-                        </Text>
+                        <View style={styles.titleRow}>
+                          <Text
+                            style={[typography.bodyLarge, { color: colors.textPrimary }]}
+                            numberOfLines={1}
+                          >
+                            {option.title}
+                          </Text>
+                          {option.group ? <Badge group={option.group} /> : null}
+                        </View>
                         {option.subtitle ? (
                           <Text style={[typography.bodySmall, { color: colors.textSecondary }]}>
                             {option.subtitle}
@@ -191,6 +281,12 @@ export function EquipmentPicker({
                         {option.spec ? (
                           <Text style={[typography.bodySmall, { color: colors.textTertiary }]}>
                             {option.spec}
+                          </Text>
+                        ) : null}
+                        {option.disambiguator && option.disambiguator !== option.spec &&
+                        option.disambiguator !== option.subtitle ? (
+                          <Text style={[typography.bodySmall, { color: colors.status.info.text }]}>
+                            {option.disambiguator}
                           </Text>
                         ) : null}
 
@@ -226,7 +322,9 @@ export function EquipmentPicker({
                       ) : null}
                     </Pressable>
                   );
-                })
+                })}
+                </View>
+                ))
               )}
             </ScrollView>
           </View>
@@ -282,6 +380,21 @@ const styles = StyleSheet.create({
     minHeight: 44,
     alignItems: 'flex-end',
     justifyContent: 'center',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  badge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  search: {
+    borderWidth: 1,
+    minHeight: 44,
   },
   option: {
     flexDirection: 'row',

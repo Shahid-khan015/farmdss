@@ -59,19 +59,85 @@ tractor/implement pairing — the DSS could not perform matching at all. With th
 correction, slip spans 4–19 %, TE 24–57 %, and power utilization separates a 17 kW
 tractor (overloaded) from a 40 kW one (headroom) on the same implement.
 
-`F` (soil-texture factor) — **EXTERNAL-MODEL (ASABE D497 Table 1)**. Previously tagged
-LEGACY/uncited. The stored values are the D497 `F₁/F₂/F₃` rows symbol-for-symbol —
-MB plough 1.0/0.70/0.45, disc plough and disc harrow 1.0/0.88/0.78, cultivator
-1.0/0.85/0.65 (`constants.FI_FACTOR_BY_IMPLEMENT_AND_TEXTURE`). The document names the
-classes without tabulating them; the values match the standard the draft equation itself
-comes from. Re-tagged on that evidence — **no numeric change**.
+`F` (soil-texture factor) — **REFERENCE-ALIGNED** 🔧 *revised*. One global value per soil
+texture, applied to every implement: **Fine 1.00, Medium 0.70, Coarse 0.45**
+(`constants.FI_FACTOR_BY_TEXTURE`). The DSS document names the texture classes without
+tabulating them, so the authority here is the reference stack: the spreadsheet's
+"tractor and implement data" sheet, cells **D50:F53** — a three-row Soil Type/Fi table
+with **no implement dimension** — and `tillage_dss.html`, which hard-codes the same
+three values in its texture selector.
 
-### A2. Vertical soil reaction — **DSS-EXACT**
+This is a **deliberate departure from ASABE D497**, and the direction matters. D497
+Table 1 carries its own `F₁/F₂/F₃` on each implement row (disc plough and disc harrow
+1.0/0.88/0.78, cultivator 1.0/0.85/0.65); the three values above are specifically its
+**moldboard-plough row**, generalised to every tool. The spreadsheet's own `A`/`B`/`C`
+are per-implement D497 rows, so the workbook was read from that table row by row and
+took `F` from one row only.
+
+Applying it everywhere understates draft on non-moldboard tools in non-fine soil:
+draft ×0.795 (disc, medium), **×0.577** (disc, coarse), ×0.824 and ×0.692 (cultivator,
+medium/coarse). Downstream on a disc harrow in coarse soil: draft −42.3 %, slip −44.9 %,
+power utilisation −36.4 %, fuel/ha −29.5 %. **MB Plough is unaffected in every texture,
+and fine soil is unaffected for every implement.** Adopted by explicit decision, trading
+D497 fidelity for agreement with the spreadsheet and the HTML tool.
+
+`implement_type` no longer selects the value but is still validated: `fi_factor` rejects
+PTO-powered types outright. That guard used to fall out of the per-implement table having
+no active rows; a global table has no such row to be missing, so it is now an explicit
+`is_passive` check. Pinned by `test_fi_factor_raises_value_error_for_active_types`, and
+the values by `test_fi_soil_texture_factor_is_global` (all 12 implement × texture
+combinations), `test_fi_is_global_and_matches_the_reference_stack`, and
+`test_fi_is_applied_identically_in_all_three_modes`.
+
+`W` (the width term) — **EXTERNAL-MODEL (ASABE D497 Table 1)** 🔧 *revised*.
+D497 does not use one unit for `W`. Full-width tools (mouldboard/disc ploughs, disc
+harrows) take the working width in **metres**; tined implements are tabulated **per
+tool**, so `W` is the **number of tools**. `A = 32, B = 1.9, C = 0` is D497's
+secondary-tillage field cultivator, a per-tool row.
+`legacy_algorithms.draft_width_parameter` / `constants.DRAFT_WIDTH_IS_TOOL_COUNT`,
+sourced from `Implement.number_of_tools`.
+
+Reading a cultivator's `W` as metres gives **505 N/m at every size** — the width
+cancels, so the number carries no information — against ~1975 N/m for a disc plough
+and ~4050 N/m for a disc harrow. It also dropped a 9-tine cultivator's draft (606 N)
+below a rotavator's forward thrust (1296 N), making `Deff` non-positive and failing
+**every cultivator + rotavator active-passive run on every tractor**. Per-tool gives a
+consistent ~2070 N/m across sizes, and the reference cultivator widths independently
+corroborate it: they imply a 241–244 mm tine spacing, textbook for a field cultivator.
+
+Only Eq. 3.1 is affected — field capacity, turning time and swath always use metres.
+
+**A missing `number_of_tools` raises; it does not fall back to metres.** An earlier
+revision did fall back so that rows predating the column kept running. The result is
+not merely understated but meaningless: for a 9-tine cultivator behind a rotavator at
+12 cm / 4 km/h the substitution takes draft from 2759 N to **12.6 N (219× low)**,
+because in active-passive the understated passive draft is very nearly cancelled by
+the rotor's forward thrust (`Deff = Dp + Da − Ta`). The run then *succeeds* and reports
+a plausible "Underloaded" verdict built on ~zero draft. A refused answer beats a wrong
+one that looks right. `routes/simulations._require_implement_fields` gates it before
+dispatch (conditionally, via `draft_width_is_tool_count`) so the 422 names the field.
+Pinned by `test_draft_width_rejects_a_missing_tool_count` and
+`test_missing_tool_count_would_have_nearly_cancelled_active_draft`.
+
+> ⚠️ **Deliberate divergence from both reference implementations**, which use metres
+> for every implement class.
+
+### A2. Vertical soil reaction — **EXTERNAL-MODEL** ⚠️ *corrected*
 ```
-Py = ratio(implement_type) * D
-ratio: MB Plough 0.15 · Disc Plough 0.40 · Disc Harrow 0.50 · Cultivator 0
+Py = ratio * D
+ratio: Implement.vertical_horizontal_ratio, else per-type fallback:
+       MB Plough 0.20 · Disc Plough 0 · Disc Harrow 0 · Cultivator 0.20
 ```
-(Kepner et al., 1978, as cited in the document.)
+Both reference implementations carry `Py/D` as a **per-implement input** — the spreadsheet's
+"Vertical to Horizontal Ratio" cell (`C17`, with `C44 = C17*C43`) and the HTML library's `PyD`
+field — not as a per-type constant. The engine reads the implement's own column first and falls
+back to the table only when it is null.
+
+Supersedes `MB 0.15 / Disc Plough 0.40 / Disc Harrow 0.50 / Cultivator 0`, attributed to
+Kepner et al. 1978 via the DSS document. Those values disagree with **both** references on every
+row — nearly inverted for the disc tools and the cultivator — and materially changed the axle-load
+split. The `Implement.vertical_horizontal_ratio` column already existed and was threaded into
+`LegacyInputs` but ignored; it is now the primary source.
 
 ### A3. Depth of draft action and wheel eccentricity
 ```
@@ -85,6 +151,32 @@ ef = 0.1 * rf              [IMPLEMENTATION-ASSUMPTION — 0.1 is stated only for
 Rr = [(Wm+Py)(Xcgi+Hd+L+ef) + Wt(L+ef−Xcgt) − D*Yd] / (L − er + ef)   (Eq. 3.5)
 Rf = (Wt + Wm + Py) − Rr                                              (Eq. 3.6)
 ```
+
+**Front lift is answered, not refused** 🔧 *revised*
+(`legacy_algorithms.resolve_axle_loads`, used by all three modes.)
+
+A non-positive `Rf` means the draft has lifted the front end. The engine used to
+raise `ValueError("Invalid load distribution: dynamic axle load became
+non-positive")`, which surfaced as an opaque 422 on **241 of 1,573** catalogue
+pairings. But that is precisely the condition the DSS exists to advise on, and
+the engine already owns the solver: most such pairings become driveable with
+modest front ballast (Captain DI 2600 + 5-bottom MB needs 200 kg; Mitsubishi
+MT 180 D + 5-bottom needs 900 kg).
+
+The resolver now fits the minimum front ballast that restores the `Kwef = 0.20`
+steering-weight target, re-solves the same Eq. 3.5/3.6 balance with it, and
+returns a normal result carrying:
+
+| key | meaning |
+|---|---|
+| `stabilising_front_ballast_kg` | ballast fitted; `0.0` when none was needed |
+| `infeasible_without_ballast` | `True` when the figures are conditional on it |
+
+plus an explicit warning. It still raises only when **no** finite ballast reaches
+the target, and a non-positive **rear** load still raises unconditionally — front
+ballast moves load *off* the driven axle, so rear lift is genuinely not rescuable.
+
+After this change the full 1,573-pairing sweep has **zero** hard failures.
 
 ### A5. Wheel numeric (mobility number) — **DSS-EXACT** ⚠️ *corrected*
 ```
@@ -140,15 +232,62 @@ Confirmed with the user as a corrected transcription. Defined once, in
 Pst(S) = μ(S) * Rr                                        [DSS-EXACT, image27]
 Start S = 2 %, step 0.1 %, stop when Pst ≥ D              [DSS-EXACT, §3.4.6 text]
 Hard cap S = 20 %                                         [IMPLEMENTATION-ASSUMPTION]
+
+On convergence, interpolate between the last two grid points:  [EXTERNAL-MODEL]
+  S = S_prev + (D − Pst_prev)·(S_step − S_prev)/(Pst_step − Pst_prev)
+  then re-evaluate μ and Pst at S
 ```
 The document gives no upper bound; without one an infeasible pull loops forever.
 Hitting the cap sets `converged = False` and emits a warning — it never
 fabricates a result.
 
-### A9. Tractive efficiency — **DSS-EXACT** (`image1`)
+The interpolation follows the reference implementation's `solveSlip`. The stepped
+value is the first 0.1 % increment at which pull exceeds draft, so it overstates
+slip by up to one full step; interpolating recovers the slip at which `Pst == D`.
+`μ` and `pull_n` are re-evaluated there, so the solution stays self-consistent, and
+every downstream quantity (TE, power, fuel, ballast, status) uses the interpolated
+value. The stepped value is still reported as the `slip_stepped` diagnostic, so the
+§3.4.6 schedule remains auditable.
+
+### A9. Tractive efficiency — **DSS-EXACT** formula, denominator corrected 🔧 *revised*
 ```
-TE = μ*(1−S) / μg
+TE = μ*(1−S) / GT                                          (Eq. 3.2, image1)
+GT = 0.88*(1 − e^(−0.1·Bn))*(1 − e^(−7.5·S)) + 0.04        (Brixius 1987)
 ```
+`legacy_algorithms.gross_traction_at_slip` / `traction_efficiency_percent`.
+
+**The formula is unchanged; what it was fed was wrong.** The implementation bound
+the denominator to `gross_traction_ratio(Bn) = 0.88(1 − e^(−0.1·Bn))`, which is the
+Brixius **envelope** — the ceiling `GT` approaches as slip grows — not the gross
+traction ratio developed at the operating slip.
+
+The model identification is not in doubt: our `μ` equals Brixius `GT − MR` exactly,
+where `MR = 0.04 + 1/Bn + 0.5·S/√Bn` (the two `0.04` terms cancel, which is why the
+engine's `μ` has no constant). That fixes what `GT` must be.
+
+Consequences of the old denominator:
+- TE understated ~3× at working slip (26% where the correct value is 75%);
+- TE became **monotonic in slip**, so no optimum existed — a tractor-matching DSS
+  could not identify a best operating slip;
+- since `Ptr = DBp/(TE·ηt)`, power utilisation was inflated by the same factor,
+  which is the DSS's headline Overloaded / properly-loaded / Underloaded verdict.
+
+Evidence for the correction: TE now lands at 68–80% (mean 68.4% over the full
+catalogue), matching published drawbar-to-PTO ratios of ~65–75% in field
+conditions; the old form implied 38.5%, worse than a tracked vehicle in mud. And
+at 5 km/h / 20 cm the corrected engine reproduces the standard ~10 kW-per-plough-
+bottom rule (17 kW→2-bottom, 29 kW→3-bottom, 40 kW→4-bottom), which the old form
+did not — it called a 40 kW tractor overloaded on a 3-bottom plough.
+
+> ⚠️ **Deliberate divergence from both reference implementations.** Both share this
+> defect (xlsx `C59 = (C58*(1-C55))/C57`; `tillage_dss.html` `tractiveEfficiencyPct`).
+> The HTML's own tooltip defines TE as "ratio of drawbar to axle power delivered" —
+> the correct definition, which its formula does not compute.
+>
+> `bn_rear` is a **required keyword argument** on `traction_efficiency_percent` so
+> the envelope can never again be passed in silently. Pinned by
+> `test_tractive_efficiency_uses_gross_traction_at_slip_not_the_envelope` and
+> `test_tractive_efficiency_peaks_at_a_working_slip`.
 
 ### A10. Maximum pull from engine torque (Pet) — **DSS-EXACT** formula ✨ *new*
 ```
@@ -180,34 +319,52 @@ deliberate, documented restraint.
 > Resolving this needs either a gear-ratio input or confirmation that `T` was
 > meant as *axle* torque.
 
-### A11. Ballast
+### A11. Ballast — ⚠️ *replaced by the reference method*
 ```
 Kwef = Rf / Wt, target 0.20                               [DSS-EXACT, image21]
 
-Front (Eq. 3.7, image9) — implicit in BRf:                [DSS-EXACT]
-  0.20*(Wt+BRf) = [Wt*((Rsf+BRf)/(Wt+BRf) − er) + D*Yd
-                    − (Wm+Py)*(Xcgi+Hd+er)] / (L−er+ef)
+Front — bisection on the ballast mass:
+  residual(BRf) = Rf(Wt + BRf·g) / (Wt + BRf·g) − 0.20
+  where Rf(·) is this mode's own Eq. 3.5/3.6 balance, re-solved with the
+  ballast added. Bracket expands geometrically from 5000 kg.
 
-Rear (Eq. 3.8/3.9, image10/image11):                      [DSS-EXACT]
-  R'  = D / μ'(S=0.15, Bn evaluated at W = R'/2)
-  BRr = [R'(L−er+ef) + D*Yd − Rsr*L − Wt*ef
-          − (Wm+Py)*(Xcgi+Hd+er)] / (L+ef)
+Rear — fixed point on R', then the shortfall:
+  R'  = D / μ'(s_target, Bn evaluated at W = R'/2)
+  BRr = max(0, (R' − Rr) / g)
+  s_target = 15% by default; active-passive passes its *solved* slip.
 ```
-Solution methods are **IMPLEMENTATION-ASSUMPTION** — the document gives the
-equations, not how to solve them: bisection for the implicit front equation,
-fixed-point iteration for the circular `R'`.
+Both forms come from the reference implementations, which the engine was
+reconciled against. They replace the document's Eq. 3.7 (front, implicit) and
+Eq. 3.8 (rear, moment balance):
 
-Some geometries have **no finite front-ballast solution** (the RHS saturates below
-the ever-growing LHS). That is a property of Eq. 3.7, not a solver bug; the engine
-returns `feasible=False` and warns rather than reporting a falsely precise number.
+- **Eq. 3.7's** right-hand side saturates below its own ever-growing target for
+  some geometries, making the target unreachable as an artefact of the equation
+  rather than the physics. Re-solving the actual balance removes that failure mode
+  and cannot disagree with the axle loads reported elsewhere.
+- **Eq. 3.8's** moment form disagreed with both references; the shortfall form is
+  what both compute.
 
-The rear solver has two analogous dead ends: `μ' ≤ 0` at the 15 % target slip (the
-soil develops no net pull at any rear-axle load), and a fixed point that does not
-settle. Both mean "this pairing is too heavy for this soil" — the verdict the DSS
-exists to deliver — so `rear_ballast_required_kg` returns `(None, reason)` and the
-caller raises it as a warning, keeping draft/slip/power/fuel as the evidence.
-It previously raised, discarding the whole result set for exactly the pairings that
-most needed explaining. The number is still never fabricated.
+A consequence worth recording: DSS Eq. 5.12/5.13 (active-passive) *is* the rear
+shortfall form, differing only in target slip, and Eq. 5.10/5.11's front closed
+form is subsumed by the shared bisection. All three modes therefore now share one
+front and one rear solver, and the Section 5 special cases were deleted.
+
+**Modelling limitation:** ballast is added at the tractor CG rather than ahead of
+the front axle, so only part of each added kilogram reaches the front wheels and
+reported front masses are larger than a physical front weight would need to be.
+This is the reference behaviour, adopted deliberately.
+
+Solution methods remain **IMPLEMENTATION-ASSUMPTION** — the references give the
+algorithms, the document gives neither.
+
+The rear solver has two dead ends: `μ' ≤ 0` at the target slip (the soil develops
+no net pull at any rear-axle load), and a fixed point that does not settle. Both
+mean "this pairing is too heavy for this soil" — the verdict the DSS exists to
+deliver — so `rear_ballast_required_kg` returns `(None, reason)` and the caller
+raises it as a warning, keeping draft/slip/power/fuel as the evidence. It
+previously raised, discarding the whole result set for exactly the pairings that
+most needed explaining. The number is still never fabricated. The front solver
+returns `(None, False)` on the same principle.
 
 ### A12. Power — **DSS-EXACT**
 ```
@@ -494,7 +651,7 @@ itself calls "normally negligible at steady forward speed") has no input.
 | `REAR_BALLAST_TARGET_SLIP_PCT` | 15.0 | DSS-EXACT |
 | `BALLAST_SOLVER_TOLERANCE` / `_MAX_ITERATIONS` | 1e-4 / 200 | IMPLEMENTATION-ASSUMPTION |
 | `PY_OVER_D_RATIO_BY_IMPLEMENT` | 0.15/0.40/0.50/0 | DSS-EXACT |
-| `FI_FACTOR_BY_IMPLEMENT_AND_TEXTURE` | table | LEGACY |
+| `FI_FACTOR_BY_TEXTURE` | 1.0 / 0.70 / 0.45 | REFERENCE-ALIGNED |
 | `SFC_COEFF_*`, `SFC_RADICAND_*` | 2.64/3.91/0.203/738/173 | DSS-EXACT (ASABE 2001) |
 | `PUT_PROPERLY_LOADED_RANGE` | (95, 100) | DSS-EXACT |
 | `TURNING_TIME_*`, `FIELD_EFFICIENCY_CLAMP`, `FUEL_L_PER_HA_CLAMP`, `OVERALL_EFFICIENCY_CLAMP` | — | LEGACY |
@@ -581,7 +738,8 @@ unchanged. Stored historical simulations keep their original values.
    defaults to 0.
 5. **Rotor `Pr`/`Fr`** reproduce `PPTO` by construction because `T = MPTO`; a real
    cross-check needs a measured-torque input. See C7.
-6. **`Fi` soil-texture table** — classes named, no numbers given; values are LEGACY.
+6. **`Fi` soil-texture table** — classes named, no numbers given; the values are taken
+   from the reference stack (global, 1.0/0.70/0.45), not from the document.
 7. **`ef`** — `0.1` stated only for `er`, applied to `ef` by symmetry.
 8. **`Pet`'s role** — Eq. 3.4 is given but its place in the algorithm flow is not;
    implemented as a diagnostic that does not cap `Pst`. See A10.

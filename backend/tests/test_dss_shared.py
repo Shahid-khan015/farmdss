@@ -13,7 +13,6 @@ import pytest
 from app.core.constants import (
     DIESEL_CALORIFIC_VALUE,
     FIELD_EFFICIENCY_CLAMP,
-    FUEL_L_PER_HA_CLAMP,
 )
 from app.core.dss_shared import (
     draft_force_n,
@@ -227,9 +226,15 @@ def test_overall_efficiency_uses_the_centralised_calorific_value():
     assert p.overall_pct == pytest.approx(expected)
 
 
-def test_fuel_per_hectare_is_clamped():
+def test_fuel_per_hectare_is_floored_but_never_capped():
+    """Both reference implementations report the raw L/h ÷ ha/h ratio.
+
+    An earlier 200 L/ha cap disguised genuinely over-worked pairings behind a
+    plausible-looking number; only the floor at 0 survives.
+    """
     p = power_and_fuel(**dict(POWER_KW, draft_n=400000.0, fc_ac=0.01))
-    assert p.fuel_l_per_ha == pytest.approx(FUEL_L_PER_HA_CLAMP[1])
+    assert p.fuel_l_per_ha == pytest.approx(p.fuel_lph / 0.01)
+    assert p.fuel_l_per_ha > 200.0
 
 
 def test_power_and_fuel_rejects_invalid_inputs():

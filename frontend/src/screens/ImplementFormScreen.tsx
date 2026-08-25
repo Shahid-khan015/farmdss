@@ -53,16 +53,26 @@ export function ImplementFormScreen() {
   const [a, setA] = useState('');
   const [b, setB] = useState('');
   const [c, setC] = useState('');
+  const [numberOfTools, setNumberOfTools] = useState('');
   const [configuration, setConfiguration] = useState<DiscHarrowConfiguration | null>(null);
   const [rotorDa, setRotorDa] = useState('');
   const [rotorEta, setRotorEta] = useState('');
   const [rotorPto, setRotorPto] = useState('');
   const [rotorSpeed, setRotorSpeed] = useState('');
-const [touched, setTouched] = useState({
-  name: false,
-});
+  const [rotorFv, setRotorFv] = useState('');
+// Validation runs continuously, but a result is only shown once the user has
+  // left the field or tried to save. Without this the "add" form opens with
+  // every required field already red, before anything has been typed.
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [showErrors, setShowErrors] = useState(false);
+  const markTouched = (field: string) => () =>
+    setTouched((t) => ({ ...t, [field]: true }));
+  const showError = (field: string): string | undefined =>
+    showErrors || touched[field] ? errors[field] ?? undefined : undefined;
 
   const isPowered = isActiveImplement(implementType);
+  // Mirrors backend `constants.DRAFT_WIDTH_IS_TOOL_COUNT`.
+  const requiresToolCount = implementType === 'Cultivator';
   const supportsConfiguration =
     implementType === 'Disc Harrow' || implementType === 'Disc Harrow (Powered)';
 
@@ -80,11 +90,13 @@ const [touched, setTouched] = useState({
     setA(i.asae_param_a?.toString() ?? '');
     setB(i.asae_param_b?.toString() ?? '');
     setC(i.asae_param_c?.toString() ?? '');
+    setNumberOfTools(i.number_of_tools?.toString() ?? '');
     setConfiguration(i.configuration ?? null);
     setRotorDa(i.rotor_mechanical_resistance?.toString() ?? '');
     setRotorEta(i.rotor_efficiency?.toString() ?? '');
     setRotorPto(i.rotor_pto_power?.toString() ?? '');
     setRotorSpeed(i.rotor_speed?.toString() ?? '');
+    setRotorFv(i.rotor_dynamic_vertical_force?.toString() ?? '');
   }, [id, initial, impQ.data]);
 
   // Configuration is only meaningful for disc harrows.
@@ -114,6 +126,30 @@ const [touched, setTouched] = useState({
       e.width = 'Width is required';
     }
 
+    if (!isPowered) {
+      // The engine hard-requires these for the passive draft and axle-load
+      // model; blank used to save fine and then 422 on every simulation.
+      e.weight = required(weight.trim(), 'Weight');
+      e.cg = required(cg.trim(), 'CG distance from hitch');
+      e.a = required(a.trim(), 'ASAE parameter A');
+      e.b = required(b.trim(), 'ASAE parameter B');
+      e.c = required(c.trim(), 'ASAE parameter C');
+
+      // ASABE D497 tabulates tined implements per tool, so Eq. 3.1's W is the
+      // tool count. Without it the draft is size-independent and far too low.
+      if (requiresToolCount) {
+        const n = numberOfTools.trim();
+        if (!n) {
+          e.numberOfTools = 'Number of tines is required for this implement type';
+        } else {
+          const v = toNumber(n);
+          if (v === null || !Number.isInteger(v) || v <= 0) {
+            e.numberOfTools = 'Number of tines must be a whole number above 0';
+          }
+        }
+      }
+    }
+
     if (isPowered) {
       // Without all four, the implement cannot fill the rotor slot of an
       // active-passive run: it would save "successfully" and then be
@@ -134,11 +170,18 @@ const [touched, setTouched] = useState({
       }
     }
     return e;
-  }, [name, width, isPowered, rotorDa, rotorEta, rotorPto, rotorSpeed]);
+  }, [name, width, isPowered, requiresToolCount, weight, cg, a, b, c, numberOfTools, rotorDa, rotorEta, rotorPto, rotorSpeed]);
 
   const canSubmit = Object.values(errors).every((v) => !v) && !saving;
 
   const handleSave = async () => {
+    if (!canSubmit) {
+      // The button stays pressable so it can explain itself; a disabled control
+      // with no reason is how the user gets stuck.
+      setShowErrors(true);
+      return;
+    }
+
     // `toNumber('')` is 0, so a blank optional field would otherwise be stored as
     // a real 0 — which reads as "present" to the readiness check and produces
     // silently wrong results instead of an honest "not set".
@@ -159,10 +202,12 @@ const [touched, setTouched] = useState({
       asae_param_a: isPowered ? null : numOrNull(a),
       asae_param_b: isPowered ? null : numOrNull(b),
       asae_param_c: isPowered ? null : numOrNull(c),
+      number_of_tools: isPowered ? null : numOrNull(numberOfTools),
       rotor_mechanical_resistance: isPowered ? numOrNull(rotorDa) : null,
       rotor_efficiency: isPowered ? numOrNull(rotorEta) : null,
       rotor_pto_power: isPowered ? numOrNull(rotorPto) : null,
       rotor_speed: isPowered ? numOrNull(rotorSpeed) : null,
+      rotor_dynamic_vertical_force: isPowered ? numOrNull(rotorFv) : null,
     };
 
     if (!id) {
@@ -174,7 +219,6 @@ const [touched, setTouched] = useState({
     }
   };
 
-  const canSave = Object.values(errors).every((v) => !v) && !saving;
 
   if (id && impQ.isLoading) return <LoadingSpinner />;
   if (id && impQ.error) return <ErrorMessage message={(impQ.error as Error).message} />;
@@ -211,9 +255,9 @@ const [touched, setTouched] = useState({
           placeholder="e.g., Plough #1"
           value={name}
           onChangeText={setName}
-          onBlur={() => setTouched((t) => ({ ...t, name: true }))}
-          error={touched.name && !!errors.name}
-          helperText={touched.name ? errors.name ?? undefined : undefined}
+          onBlur={markTouched('name')}
+          error={!!showError('name')}
+          helperText={showError('name')}
           containerStyle={styles.field}
         />
 
@@ -321,8 +365,9 @@ const [touched, setTouched] = useState({
           value={width}
           onChangeText={setWidth}
           keyboardType="decimal-pad"
-          error={!!errors.width}
-          helperText={errors.width ?? 'Cutting width used for draft and field capacity.'}
+          onBlur={markTouched('width')}
+          error={!!showError('width')}
+          helperText={showError('width') ?? 'Cutting width used for draft and field capacity.'}
           containerStyle={styles.field}
         />
         <Input
@@ -332,9 +377,27 @@ const [touched, setTouched] = useState({
           value={weight}
           onChangeText={setWeight}
           keyboardType="decimal-pad"
+          onBlur={markTouched('weight')}
+          error={!!showError('weight')}
           helperText="Mass carried on the hitch, used in the axle-load balance."
           containerStyle={styles.field}
         />
+        {requiresToolCount && (
+          <Input
+            label="Number of tines"
+            required
+            value={numberOfTools}
+            onChangeText={setNumberOfTools}
+            keyboardType="number-pad"
+            onBlur={markTouched('numberOfTools')}
+            error={!!showError('numberOfTools')}
+            helperText={
+              showError('numberOfTools') ??
+              "ASABE D497 tabulates tined implements per tool, so this - not the width in metres - is the W in the draft equation."
+            }
+            containerStyle={styles.field}
+          />
+        )}
         <Input
           label="CG distance from hitch"
           required
@@ -342,6 +405,8 @@ const [touched, setTouched] = useState({
           value={cg}
           onChangeText={setCg}
           keyboardType="decimal-pad"
+          onBlur={markTouched('cg')}
+          error={!!showError('cg')}
           helperText="Horizontal distance from the hitch point to the implement's centre of gravity."
           containerStyle={styles.field}
         />
@@ -373,7 +438,10 @@ const [touched, setTouched] = useState({
             labelHint="Constant term"
             value={a}
             onChangeText={setA}
+            onBlur={markTouched('a')}
             keyboardType="decimal-pad"
+            error={!!showError('a')}
+            helperText={showError('a')}
             containerStyle={styles.field}
           />
           <Input
@@ -382,7 +450,10 @@ const [touched, setTouched] = useState({
             labelHint="× speed"
             value={b}
             onChangeText={setB}
+            onBlur={markTouched('b')}
             keyboardType="decimal-pad"
+            error={!!showError('b')}
+            helperText={showError('b')}
             containerStyle={styles.field}
           />
           <Input
@@ -391,7 +462,10 @@ const [touched, setTouched] = useState({
             labelHint="× speed²"
             value={c}
             onChangeText={setC}
+            onBlur={markTouched('c')}
             keyboardType="decimal-pad"
+            error={!!showError('c')}
+            helperText={showError('c')}
             containerStyle={styles.field}
           />
         </CollapsibleSection>
@@ -416,9 +490,10 @@ const [touched, setTouched] = useState({
             value={rotorDa}
             onChangeText={setRotorDa}
             keyboardType="decimal-pad"
-            error={!!errors.rotorDa}
+            onBlur={markTouched('rotorDa')}
+            error={!!showError('rotorDa')}
             helperText={
-              errors.rotorDa ??
+              showError('rotorDa') ??
               "The rotor's own frame/bearing drag, independent of the thrust it develops."
             }
             containerStyle={styles.field}
@@ -430,9 +505,10 @@ const [touched, setTouched] = useState({
             value={rotorEta}
             onChangeText={setRotorEta}
             keyboardType="decimal-pad"
-            error={!!errors.rotorEta}
+            onBlur={markTouched('rotorEta')}
+            error={!!showError('rotorEta')}
             helperText={
-              errors.rotorEta ?? 'Share of PTO power converted into useful forward thrust.'
+              showError('rotorEta') ?? 'Share of PTO power converted into useful forward thrust.'
             }
             containerStyle={styles.field}
           />
@@ -444,9 +520,10 @@ const [touched, setTouched] = useState({
             value={rotorPto}
             onChangeText={setRotorPto}
             keyboardType="decimal-pad"
-            error={!!errors.rotorPto}
+            onBlur={markTouched('rotorPto')}
+            error={!!showError('rotorPto')}
             helperText={
-              errors.rotorPto ?? 'Power the rotor takes from the engine via the PTO.'
+              showError('rotorPto') ?? 'Power the rotor takes from the engine via the PTO.'
             }
             containerStyle={styles.field}
           />
@@ -458,10 +535,21 @@ const [touched, setTouched] = useState({
             value={rotorSpeed}
             onChangeText={setRotorSpeed}
             keyboardType="decimal-pad"
-            error={!!errors.rotorSpeed}
+            onBlur={markTouched('rotorSpeed')}
+            error={!!showError('rotorSpeed')}
             helperText={
-              errors.rotorSpeed ?? 'Used for the PTO reaction moment, MPTO = 9550 × P_PTO / N.'
+              showError('rotorSpeed') ?? 'Used for the PTO reaction moment, MPTO = 9550 × P_PTO / N.'
             }
+            containerStyle={styles.field}
+          />
+          <Input
+            label="Dynamic vertical force"
+            unit="N"
+            labelHint="Fv"
+            value={rotorFv}
+            onChangeText={setRotorFv}
+            keyboardType="decimal-pad"
+            helperText="Optional. Extra downward force the rotor puts on the rear axle; leave blank to use 0."
             containerStyle={styles.field}
           />
         </CollapsibleSection>
@@ -485,7 +573,7 @@ const [touched, setTouched] = useState({
           variant="primary"
           size="lg"
           fullWidth
-          disabled={!canSave}
+          disabled={saving}
           loading={saving}
           onPress={handleSave}
         >

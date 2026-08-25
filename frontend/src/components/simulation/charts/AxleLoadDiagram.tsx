@@ -1,7 +1,14 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
-import Svg, { Circle, Line, Rect } from 'react-native-svg';
+import Svg, {
+  Circle,
+  G,
+  Line,
+  Path,
+  Rect,
+  Text as SvgText,
+} from 'react-native-svg';
 
 import { useTheme } from '../../../theme/ThemeProvider';
 import { formatQuantity } from '../../../theme/units';
@@ -18,8 +25,14 @@ type Props = {
 /**
  * Side elevation of the tractor showing how dynamic weight splits across the axles.
  *
- * The front/rear proportions are drawn straight from the engine's `Rf`/`Rr`, and the
- * front axle is flagged when Kwef falls below the DSS steering minimum of 0.20.
+ * Drawn in a fixed 320x188 user space and scaled to the measured width, so the
+ * proportions hold on any screen rather than distorting with the container.
+ *
+ * The two axles are the subject of the drawing, not incidental detail: each one
+ * gets a dashed centreline through the hub and a reaction column below the ground
+ * line whose height is that axle's share of the dynamic load. The front axle
+ * carries the Kwef tone, so a steering-weight problem is visible on the axle it
+ * concerns rather than only in the legend.
  */
 export function AxleLoadDiagram({
   frontLoadN,
@@ -30,93 +43,204 @@ export function AxleLoadDiagram({
   const { colors, spacing, radius, typography, numeric } = useTheme();
   const [width, setWidth] = React.useState(0);
 
-  const total = (frontLoadN ?? 0) + (rearLoadN ?? 0);
-  const frontShare = total > 0 && frontLoadN !== null ? frontLoadN / total : 0;
   const frontTone = kwefTone(frontUtilization);
   const belowMinimum = frontUtilization !== null && frontUtilization < KWEF_MINIMUM;
 
-  const height = 128;
-  const groundY = height - 26;
-  const wheelR = 18;
-  const frontCx = width * 0.24;
-  const rearCx = width * 0.76;
+  // --- fixed drawing space -------------------------------------------------
+  const VB_W = 320;
+  const VB_H = 188;
+  const GROUND_Y = 126;
+  const FRONT_CX = 80;
+  const FRONT_R = 22;
+  const REAR_CX = 236;
+  const REAR_R = 34;
+  /** Underside of the body. The wheels sit outboard of it in a side view, so
+   *  they are drawn last and legitimately overlap it. */
+  const BODY_BASE = 88;
+  const frontCy = GROUND_Y - FRONT_R;
+  const rearCy = GROUND_Y - REAR_R;
 
-  const summary = `Front axle ${formatQuantity(frontLoadN, 'force')}, rear axle ${formatQuantity(
-    rearLoadN,
+  // Reaction columns are scaled against the heavier axle so both stay visible;
+  // the ratio between them is still exactly Rf : Rr.
+  const heaviest = Math.max(frontLoadN ?? 0, rearLoadN ?? 0);
+  const COLUMN_MAX = 30;
+  const columnH = (load: number | null) =>
+    heaviest > 0 && load !== null ? Math.max((load / heaviest) * COLUMN_MAX, 3) : 0;
+  const frontColumnH = columnH(frontLoadN);
+  const rearColumnH = columnH(rearLoadN);
+
+  const tyre = colors.borderStrong;
+  const bodyFill = colors.primary;
+  const bodyShade = colors.primaryMuted;
+
+  const summary = `Side view of the tractor. Front axle ${formatQuantity(
+    frontLoadN,
     'force',
-  )}.${belowMinimum ? ' Front axle below the 0.20 minimum utilisation.' : ''}`;
+  )}, rear axle ${formatQuantity(rearLoadN, 'force')}.${
+    belowMinimum ? ' Front axle below the 0.20 minimum utilisation.' : ''
+  }`;
+
+  /** Tyre: rubber ring, rim, hub, and tread ticks around the circumference. */
+  const wheel = (cx: number, cy: number, r: number, hubColor: string, ringColor: string) => (
+    <G>
+      <Circle cx={cx} cy={cy} r={r} fill={colors.surfaceSunken} stroke={tyre} strokeWidth={6} />
+      {Array.from({ length: 12 }).map((_, i) => {
+        const a = (i / 12) * Math.PI * 2;
+        const inner = r - r * 0.06;
+        const outer = r + r * 0.09;
+        return (
+          <Line
+            key={i}
+            x1={cx + Math.cos(a) * inner}
+            y1={cy + Math.sin(a) * inner}
+            x2={cx + Math.cos(a) * outer}
+            y2={cy + Math.sin(a) * outer}
+            stroke={tyre}
+            strokeWidth={r * 0.09}
+            strokeLinecap="round"
+          />
+        );
+      })}
+      <Circle cx={cx} cy={cy} r={r * 0.46} fill={colors.surface} stroke={ringColor} strokeWidth={2.5} />
+      {/* Axle hub - the axle itself, and where its centreline passes through. */}
+      <Circle cx={cx} cy={cy} r={r * 0.17} fill={hubColor} />
+    </G>
+  );
 
   return (
     <View style={{ gap: spacing.sm }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       {width > 0 ? (
         <Svg
           width={width}
-          height={height}
+          height={Math.min(width * (VB_H / VB_W), 220)}
+          viewBox={`0 0 ${VB_W} ${VB_H}`}
           accessibilityRole="image"
           accessibilityLabel={summary}
         >
-          {/* Ground line */}
+          {/* Axle centrelines, drawn behind the machine */}
+          <Line
+            x1={FRONT_CX}
+            y1={16}
+            x2={FRONT_CX}
+            y2={GROUND_Y + 8 + frontColumnH}
+            stroke={colors.status[frontTone].border}
+            strokeWidth={1.5}
+            strokeDasharray="4 4"
+          />
+          <Line
+            x1={REAR_CX}
+            y1={16}
+            x2={REAR_CX}
+            y2={GROUND_Y + 8 + rearColumnH}
+            stroke={colors.textTertiary}
+            strokeWidth={1.5}
+            strokeDasharray="4 4"
+          />
+
+          {/* Wheelbase dimension between the two axle centres */}
+          <Line x1={FRONT_CX} y1={22} x2={REAR_CX} y2={22} stroke={colors.textTertiary} strokeWidth={1} />
+          <Line x1={FRONT_CX} y1={18} x2={FRONT_CX} y2={26} stroke={colors.textTertiary} strokeWidth={1} />
+          <Line x1={REAR_CX} y1={18} x2={REAR_CX} y2={26} stroke={colors.textTertiary} strokeWidth={1} />
+          <Rect x={140} y={14} width={36} height={15} rx={4} fill={colors.surface} />
+          <SvgText
+            x={158}
+            y={25}
+            fontSize={10}
+            fill={colors.textTertiary}
+            textAnchor="middle"
+          >
+            wheelbase
+          </SvgText>
+
+          {/* --- machine ---------------------------------------------------- */}
+          {/* Rear fender: a true semicircular band over the driving wheel.
+              Outer and inner arcs are exact semicircles (chord = 2r), so SVG
+              never has to rescale the radii to make the path drawable. */}
+          <Path
+            d={`M ${REAR_CX - 42} ${BODY_BASE} A 42 42 0 0 1 ${REAR_CX + 42} ${BODY_BASE} L ${REAR_CX + 36} ${BODY_BASE} A 36 36 0 0 0 ${REAR_CX - 36} ${BODY_BASE} Z`}
+            fill={bodyShade}
+          />
+          {/* Chassis beam between the axles */}
+          <Rect x={FRONT_CX - 6} y={BODY_BASE} width={REAR_CX - FRONT_CX + 12} height={12} rx={3} fill={bodyShade} />
+          {/* Bonnet over the front axle */}
+          <Path
+            d={`M 46 ${BODY_BASE} L 46 68 Q 46 62 52 62 L 152 62 L 152 ${BODY_BASE} Z`}
+            fill={bodyFill}
+          />
+          {/* Grille */}
+          <Rect x={46} y={70} width={7} height={14} rx={2} fill={colors.surfaceSunken} />
+          {/* Exhaust stack */}
+          <Rect x={132} y={38} width={6} height={24} rx={2} fill={bodyShade} />
+          {/* Cab */}
+          <Path
+            d={`M 148 ${BODY_BASE} L 152 44 L 224 44 L 228 ${BODY_BASE} Z`}
+            fill={bodyFill}
+          />
+          {/* Cab roof */}
+          <Rect x={144} y={36} width={88} height={9} rx={3} fill={bodyShade} />
+          {/* Window */}
+          <Path
+            d={`M 158 82 L 161 52 L 216 52 L 219 82 Z`}
+            fill={colors.surfaceSunken}
+            opacity={0.9}
+          />
+
+          {/* Wheels last so the hubs read on top of the body */}
+          {wheel(REAR_CX, rearCy, REAR_R, colors.status.ok.base, colors.status.ok.base)}
+          {wheel(FRONT_CX, frontCy, FRONT_R, colors.status[frontTone].base, colors.status[frontTone].base)}
+
+          {/* Ground */}
           <Line
             x1={0}
-            y1={groundY + wheelR}
-            x2={width}
-            y2={groundY + wheelR}
-            stroke={colors.border}
-            strokeWidth={2}
-          />
-
-          {/* Chassis */}
-          <Rect
-            x={frontCx}
-            y={groundY - 26}
-            width={rearCx - frontCx}
-            height={12}
-            rx={4}
-            fill={colors.borderStrong}
-          />
-          {/* Cab block over the rear axle */}
-          <Rect
-            x={rearCx - 34}
-            y={groundY - 56}
-            width={40}
-            height={32}
-            rx={5}
-            fill={colors.surfaceSunken}
+            y1={GROUND_Y}
+            x2={VB_W}
+            y2={GROUND_Y}
             stroke={colors.borderStrong}
-            strokeWidth={1.5}
+            strokeWidth={2.5}
           />
 
-          {/* Wheels sized by their share of the dynamic load */}
-          <Circle
-            cx={frontCx}
-            cy={groundY}
-            r={wheelR}
-            fill={colors.status[frontTone].surface}
-            stroke={colors.status[frontTone].base}
-            strokeWidth={3}
-          />
-          <Circle
-            cx={rearCx}
-            cy={groundY - 4}
-            r={wheelR + 6}
-            fill={colors.status.ok.surface}
-            stroke={colors.status.ok.base}
-            strokeWidth={3}
-          />
-
-          {/* Load split ribbon */}
-          <Rect x={0} y={8} width={width} height={8} rx={4} fill={colors.chartTrack} />
+          {/* Ground-reaction columns: height is each axle's share of the load */}
           <Rect
-            x={0}
-            y={8}
-            width={Math.max(width * frontShare, 4)}
-            height={8}
-            rx={4}
+            x={FRONT_CX - 9}
+            y={GROUND_Y + 4}
+            width={18}
+            height={frontColumnH}
+            rx={3}
             fill={colors.status[frontTone].base}
           />
+          <Rect
+            x={REAR_CX - 9}
+            y={GROUND_Y + 4}
+            width={18}
+            height={rearColumnH}
+            rx={3}
+            fill={colors.status.ok.base}
+          />
+
+          {/* Axle captions */}
+          <SvgText
+            x={FRONT_CX}
+            y={GROUND_Y + 52}
+            fontSize={11}
+            fontWeight="600"
+            fill={colors.status[frontTone].text}
+            textAnchor="middle"
+          >
+            FRONT AXLE
+          </SvgText>
+          <SvgText
+            x={REAR_CX}
+            y={GROUND_Y + 52}
+            fontSize={11}
+            fontWeight="600"
+            fill={colors.textSecondary}
+            textAnchor="middle"
+          >
+            REAR AXLE
+          </SvgText>
         </Svg>
       ) : (
-        <View style={{ height }} />
+        <View style={{ height: 160 }} />
       )}
 
       <View style={styles.legend}>

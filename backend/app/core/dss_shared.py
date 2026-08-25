@@ -25,7 +25,6 @@ from app.core.constants import (
     DIESEL_CALORIFIC_VALUE,
     DRAFT_DEPTH_ACTION_FRACTION,
     FIELD_EFFICIENCY_CLAMP,
-    FUEL_L_PER_HA_CLAMP,
     OVERALL_EFFICIENCY_CLAMP,
     PUT_PROPERLY_LOADED_RANGE,
     SFC_COEFF_A,
@@ -338,7 +337,9 @@ def power_and_fuel(
     sfc = specific_fuel_consumption_l_per_kwh(x_fraction)
     fuel_lph = sfc * pdb_kw
     fuel_lph_pto_basis = sfc * total_pto_kw
-    fuel_l_per_ha = clamp(safe_div("fuel consumption per hectare", fuel_lph, fc_ac), *FUEL_L_PER_HA_CLAMP)
+    # Floored at 0, never capped: both reference implementations report the raw
+    # ratio, and an upper cap would disguise a genuinely over-worked pairing.
+    fuel_l_per_ha = max(0.0, safe_div("fuel consumption per hectare", fuel_lph, fc_ac))
 
     if fuel_l_per_ha > 0:
         overall_pct = clamp(

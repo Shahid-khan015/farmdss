@@ -119,7 +119,36 @@ export function TractorDetailScreen() {
               <Text style={styles.specLabel}>Type</Text>
               <Text style={styles.specValue}>{t.tire_specification.tire_type}</Text>
             </View>
+            {/* Front tire drives the front wheel numeric Bn_f and the front
+                rolling resistance rho_f, so it is as much a simulation input as
+                the rear -- it was previously stored and edited but never shown. */}
+            <Text style={styles.subSectionTitle}>Front Tire</Text>
+            <View style={styles.specRow}>
+              <Text style={styles.specLabel}>Size</Text>
+              <Text style={styles.specValue}>{t.tire_specification.front_tire_size ?? '-'}</Text>
+            </View>
+            <View style={styles.specRow}>
+              <Text style={styles.specLabel}>Overall Diameter</Text>
+              <Text style={styles.specValue}>{t.tire_specification.front_overall_diameter ?? '-'} mm</Text>
+            </View>
+            <View style={styles.specRow}>
+              <Text style={styles.specLabel}>Section Width</Text>
+              <Text style={styles.specValue}>{t.tire_specification.front_section_width ?? '-'} mm</Text>
+            </View>
+            <View style={styles.specRow}>
+              <Text style={styles.specLabel}>Static Loaded Radius</Text>
+              <Text style={styles.specValue}>{t.tire_specification.front_static_loaded_radius ?? '-'} mm</Text>
+            </View>
+            <View style={styles.specRow}>
+              <Text style={styles.specLabel}>Rolling Radius</Text>
+              <Text style={styles.specValue}>{t.tire_specification.front_rolling_radius ?? '-'} mm</Text>
+            </View>
+
             <Text style={styles.subSectionTitle}>Rear Tire</Text>
+            <View style={styles.specRow}>
+              <Text style={styles.specLabel}>Size</Text>
+              <Text style={styles.specValue}>{t.tire_specification.rear_tire_size ?? '-'}</Text>
+            </View>
             <View style={styles.specRow}>
               <Text style={styles.specLabel}>Overall Diameter</Text>
               <Text style={styles.specValue}>{t.tire_specification.rear_overall_diameter ?? '-'} mm</Text>

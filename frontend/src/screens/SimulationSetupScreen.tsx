@@ -10,6 +10,7 @@ import { SkeletonCard } from '../components/common/Skeleton';
 import { ConditionsForm } from '../components/simulation/ConditionsForm';
 import { EquipmentPicker, implementSpecLine, tractorSpecLine } from '../components/simulation/EquipmentPicker';
 import type { EquipmentOption } from '../components/simulation/EquipmentPicker';
+import { withDisambiguation, type SourceRecord } from '../utils/equipmentLabels';
 import { EngineDiagnosticExplainer } from '../components/simulation/EngineDiagnosticExplainer';
 import { ModeSelectorCard } from '../components/simulation/ModeSelectorCard';
 import { TillageClassSelector } from '../components/simulation/TillageClassSelector';
@@ -112,16 +113,28 @@ export function SimulationSetupScreen() {
   const implementList = implementsQ.data?.items ?? [];
   const presets = presetsQ.data?.items ?? [];
 
+  /** Library reference data and the user's own equipment share one list and can
+   *  share a name, so every option is tagged and same-name rows get a hint. */
+  const sourcesById = useMemo(() => {
+    const map = new Map<string, SourceRecord>();
+    for (const t of tractors) map.set(t.id, { is_library: t.is_library, created_at: t.created_at });
+    for (const i of implementList) map.set(i.id, { is_library: i.is_library, created_at: i.created_at });
+    return map;
+  }, [tractors, implementList]);
+
   const tractorOptions = useMemo<EquipmentOption[]>(
     () =>
-      tractors.map((tractor) => ({
-        id: tractor.id,
-        title: tractor.name,
-        subtitle: [tractor.manufacturer, tractor.model].filter(Boolean).join(' '),
-        spec: tractorSpecLine(tractor.pto_power, tractor.wheelbase),
-        readiness: checkTractorReadiness(tractor),
-      })),
-    [tractors],
+      withDisambiguation(
+        tractors.map((tractor) => ({
+          id: tractor.id,
+          title: tractor.name,
+          subtitle: [tractor.manufacturer, tractor.model].filter(Boolean).join(' '),
+          spec: tractorSpecLine(tractor.pto_power, tractor.wheelbase),
+          readiness: checkTractorReadiness(tractor),
+        })),
+        sourcesById,
+      ),
+    [tractors, sourcesById],
   );
 
   const toOption = useCallback(
@@ -151,13 +164,21 @@ export function SimulationSetupScreen() {
    * should never be presented.
    */
   const passiveOptions = useMemo<EquipmentOption[]>(
-    () => implementList.filter((i) => isPassiveImplement(i.implement_type)).map(toOption),
-    [implementList, toOption],
+    () =>
+      withDisambiguation(
+        implementList.filter((i) => isPassiveImplement(i.implement_type)).map(toOption),
+        sourcesById,
+      ),
+    [implementList, toOption, sourcesById],
   );
 
   const rotorOptions = useMemo<EquipmentOption[]>(
-    () => implementList.filter((i) => isActiveImplement(i.implement_type)).map(toOption),
-    [implementList, toOption],
+    () =>
+      withDisambiguation(
+        implementList.filter((i) => isActiveImplement(i.implement_type)).map(toOption),
+        sourcesById,
+      ),
+    [implementList, toOption, sourcesById],
   );
 
   const selectedTractor = tractors.find((t) => t.id === draft.tractorId);
