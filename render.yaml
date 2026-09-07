@@ -1,0 +1,70 @@
+# Render blueprint for the Tractor DSS backend.
+#
+# Previously the service was configured by hand in the dashboard, so nothing about the runtime
+# was version-controlled: not the Python version, not the start command, not the worker count.
+#
+# Secrets (sync: false) must be set in the Render dashboard. They take priority over the
+# committed backend/.env, whose AIO_USERNAME / AIO_KEY are intentionally blank.
+services:
+  - type: web
+    name: farmdss-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt && alembic upgrade head"
+    # --workers 1 is deliberate: each worker would run its own ingestion thread, racing on the
+    # adafruit_id unique index and multiplying connections against a capped managed Postgres.
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+      # --- secrets: set these in the Render dashboard ---
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: AIO_USERNAME
+        sync: false
+      - key: AIO_KEY
+        sync: false
+
+      - key: DEBUG
+        value: "False"
+      - key: LOG_LEVEL
+        value: "INFO"
+      # Never boot onto the ephemeral SQLite file in a hosted environment: it looks healthy while
+      # holding no data and losing everything on restart.
+      - key: ALLOW_SQLITE_FALLBACK
+        value: "False"
+
+      # MQTT is now the session-gated hot path: it connects on session start and holds no
+      # broker connection at all while idle. The /json envelope and dedup-key defects that
+      # previously kept it off are fixed.
+      - key: ENABLE_IOT_MQTT
+        value: "True"
+      - key: IOT_MQTT_TLS
+        value: "True"
+      - key: IOT_MQTT_PORT
+        value: "8883"
+      # The poller is demoted to backfill so it stops competing with MQTT for the same
+      # data points, and parks entirely when no session is running.
+      - key: ENABLE_IOT_HTTP_POLLER
+        value: "True"
+      - key: IOT_ACTIVE_POLL_INTERVAL_SEC
+        value: "45"
+      - key: IOT_IDLE_POLL_INTERVAL_SEC
+        value: "120"
+      - key: IOT_BUFFER_MAX_ITEMS
+        value: "20"
+      - key: IOT_BUFFER_MAX_AGE_SEC
+        value: "4"
+      - key: IOT_HTTP_POLL_LIMIT
+        value: "5"
+      - key: IOT_DEFAULT_DEVICE_ID
+        value: "default"
+      - key: IOT_FETCH_THROUGH_ENABLED
+        value: "True"
+      - key: IOT_STALE_AFTER_SEC
+        value: "20"

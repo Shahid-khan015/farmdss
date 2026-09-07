@@ -26,7 +26,10 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# NOTE: .env files are deliberately NOT ignored. backend/.env and frontend/.env
-# are committed in this repo and the app depends on them being present -- see
-# CLAUDE.md ("backend/.env and frontend/.env are committed and contain
-# real-shaped config").
+# Secrets. backend/.env holds AIO_KEY, SECRET_KEY and the database password, so it is
+# NOT committed. It used to be -- two real Adafruit keys reached pushed history that way
+# (commits 565cf6f and a1f0fb1). Copy backend/.env.example and fill it in locally.
+backend/.env
+.env
+!.env.example
+!**/.env.example

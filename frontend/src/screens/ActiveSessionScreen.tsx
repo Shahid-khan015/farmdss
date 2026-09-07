@@ -26,6 +26,7 @@ import { GPSInfoPanel } from '../components/iot/GPSInfoPanel';
 import { IoTMetricCard } from '../components/iot/IoTMetricCard';
 import { colors } from '../constants/colors';
 import { useIoTDashboard } from '../hooks/useIoTDashboard';
+import { useSessionLiveTelemetry } from '../hooks/useSessionLiveTelemetry';
 import { useSessionActions, useSessionDetail } from '../hooks/useSession';
 import { useImplements } from '../hooks/useImplements';
 import { useTractors } from '../hooks/useTractors';
@@ -33,10 +34,18 @@ import { acknowledgeAlert, fetchAlerts, type AlertResponse } from '../services/A
 import { addObservation } from '../services/SessionService';
 import { borderRadius, spacing, typography } from '../theme';
 
-function formatElapsed(startedAt?: string): string {
+/**
+ * Worked time, i.e. wall clock minus however long this session has been paused.
+ *
+ * This is the same quantity Threshing and Grading are billed on, so the header must not
+ * keep counting up while the badge reads PAUSED -- that showed an operator a number that
+ * had already stopped driving the charge.
+ */
+function formatElapsed(startedAt?: string, pausedSeconds = 0): string {
   if (!startedAt) return '0h 00m 00s';
   const startMs = new Date(startedAt).getTime();
-  const delta = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+  const wallClock = Math.floor((Date.now() - startMs) / 1000);
+  const delta = Math.max(0, wallClock - Math.floor(pausedSeconds));
   const h = Math.floor(delta / 3600);
   const m = Math.floor((delta % 3600) / 60);
   const s = delta % 60;
@@ -77,12 +86,17 @@ export function ActiveSessionScreen() {
   const { width } = useWindowDimensions();
 
   const { session, isLoading, error, refetch } = useSessionDetail(sessionId);
-  const { pauseSession, resumeSession, stopSession, isLoading: actionLoading } = useSessionActions();
+  const { pauseSession, resumeSession, stopSession, cancelSession, isLoading: actionLoading } =
+    useSessionActions();
   const iot = useIoTDashboard();
   const tractorsQ = useTractors({ limit: 100, offset: 0 });
   const implementsQ = useImplements({ limit: 100, offset: 0 });
 
   const [elapsed, setElapsed] = useState('0h 00m 00s');
+  // Accumulated paused seconds. The server owns the authoritative ledger (`session_pauses`);
+  // this is only what the header needs to stop ticking between polls.
+  const pausedSecondsRef = useRef(0);
+  const pausedSinceRef = useRef<number | null>(null);
   const [obsVisible, setObsVisible] = useState(false);
   const [obsType, setObsType] = useState<'soil_moisture' | 'cone_index'>('soil_moisture');
   const [obsValue, setObsValue] = useState('');
@@ -95,6 +109,10 @@ export function ActiveSessionScreen() {
   const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
 
   const displayStatus = optimisticStatus ?? session?.status ?? 'active';
+  // Push telemetry over a WebSocket while the operation is live. `iot` (the 10 s poll)
+  // stays mounted as the fallback: this hook only ever supplies fresher values, so a
+  // reconnect -- including a silent token refresh -- is invisible to the operator.
+  const live = useSessionLiveTelemetry(sessionId, displayStatus !== 'completed');
   const isCompactScreen = width < 430;
 
   useEffect(() => {
@@ -102,10 +120,13 @@ export function ActiveSessionScreen() {
   }, [session?.status]);
 
   useEffect(() => {
+    const totalPaused = () =>
+      pausedSecondsRef.current +
+      (pausedSinceRef.current != null ? (Date.now() - pausedSinceRef.current) / 1000 : 0);
     const id = setInterval(() => {
-      setElapsed(formatElapsed(session?.started_at));
+      setElapsed(formatElapsed(session?.started_at, totalPaused()));
     }, 1000);
-    setElapsed(formatElapsed(session?.started_at));
+    setElapsed(formatElapsed(session?.started_at, totalPaused()));
     return () => clearInterval(id);
   }, [session?.started_at]);
 
@@ -162,9 +183,12 @@ export function ActiveSessionScreen() {
     return Number.isFinite(parsed) ? parsed : null;
   }, [session?.started_at]);
   const sessionFeedsMap = useMemo(() => {
-    if (!sessionStartedMs) return iot.feedsMap;
+    // Socket frames layer over polled ones. Both are scoped to this session's start below,
+    // so a live frame can only ever be newer than what the poll had.
+    const merged = { ...iot.feedsMap, ...live.feedsMap };
+    if (!sessionStartedMs) return merged;
     return Object.fromEntries(
-      Object.entries(iot.feedsMap).map(([feedKey, reading]) => {
+      Object.entries(merged).map(([feedKey, reading]) => {
         if (!reading?.device_timestamp) {
           return [feedKey, undefined];
         }
@@ -175,7 +199,7 @@ export function ActiveSessionScreen() {
         return [feedKey, reading];
       }),
     ) as typeof iot.feedsMap;
-  }, [iot.feedsMap, sessionStartedMs]);
+  }, [iot.feedsMap, live.feedsMap, sessionStartedMs]);
 
   const observationGpsLine = useMemo(
     () =>
@@ -354,8 +378,13 @@ export function ActiveSessionScreen() {
       setOptimisticStatus(nextStatus);
       if (displayStatus === 'active') {
         await pauseSession(sessionId);
+        pausedSinceRef.current = Date.now();
       } else {
         await resumeSession(sessionId);
+        if (pausedSinceRef.current != null) {
+          pausedSecondsRef.current += (Date.now() - pausedSinceRef.current) / 1000;
+          pausedSinceRef.current = null;
+        }
       }
       await refetch();
     } catch (actionError) {
@@ -370,6 +399,9 @@ export function ActiveSessionScreen() {
   const confirmStop = async () => {
     try {
       setStopConfirmVisible(false);
+      // Close before stopping so the socket does not race the server's transition to
+      // "completed" and trigger a pointless reconnect on the way out.
+      live.close();
       const stopped = await stopSession(sessionId);
       nav.replace('SessionSummary', { sessionId: stopped.id });
     } catch (stopError) {
@@ -378,6 +410,37 @@ export function ActiveSessionScreen() {
         stopError instanceof Error ? stopError.message : 'Unable to stop session.',
       );
     }
+  };
+
+  const confirmCancel = async () => {
+    try {
+      live.close();
+      const cancelled = await cancelSession(sessionId);
+      nav.replace('SessionSummary', { sessionId: cancelled.id });
+    } catch (cancelError) {
+      Alert.alert(
+        'Alert',
+        cancelError instanceof Error ? cancelError.message : 'Unable to cancel session.',
+      );
+    }
+  };
+
+  /** Cancelling ends the session at zero -- the exit for a session started by mistake. */
+  const onCancel = () => {
+    Alert.alert(
+      'Cancel Session?',
+      'This ends the session with no charge. The work recorded so far will not be billed.',
+      [
+        { text: 'Keep Working', style: 'cancel' },
+        {
+          text: 'Cancel Session',
+          style: 'destructive',
+          onPress: () => {
+            void confirmCancel();
+          },
+        },
+      ],
+    );
   };
 
   const onStop = () => {
@@ -628,6 +691,18 @@ export function ActiveSessionScreen() {
             </Button>
           </View>
         </View>
+
+        {/* Stop bills the session; cancel is the no-charge exit for one started by
+            mistake. Kept visually secondary so it is not mistaken for Stop. */}
+        <Pressable
+          onPress={onCancel}
+          disabled={actionLoading}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel session without charge"
+          style={styles.cancelSessionLink}
+        >
+          <Text style={styles.cancelSessionLinkText}>Cancel session (no charge)</Text>
+        </Pressable>
       </View>
 
       <Modal visible={obsVisible} transparent animationType="slide" onRequestClose={closeObservationModal}>
@@ -928,6 +1003,16 @@ const styles = StyleSheet.create({
   resumeBtn: {
     borderColor: colors.primary,
     backgroundColor: '#F5FBF7',
+  },
+  cancelSessionLink: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  cancelSessionLinkText: {
+    ...typography.bodySmall,
+    color: colors.muted,
+    textDecorationLine: 'underline',
   },
   stopBtn: {
     borderColor: '#EF4444',

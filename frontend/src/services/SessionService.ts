@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
+import { ChargeUnit } from '../constants/operations';
 import { api } from './api';
 import { getAccessToken } from './authStorage';
 import { showSessionExpiredDialog } from './sessionExpired';
@@ -70,8 +71,15 @@ export interface SessionResponse {
   alerts_count?: number;
   unacknowledged_alerts?: number;
   total_cost_inr?: number;
+  /** The rate locked at session start. Rs/ha or Rs/hr -- `charge_unit` says which. */
   charge_per_ha_applied?: number;
+  charge_unit?: ChargeUnit | null;
+  rate_currency?: string | null;
+  /** Worked hours net of pauses; set for per-hour operations once the session ends. */
+  billable_hours?: number | null;
   cost_note?: string;
+  /** Non-null means the charge is final and will not change. */
+  cost_finalized_at?: string | null;
   created_at: string;
 }
 
@@ -96,6 +104,8 @@ export interface AreaSummaryResponse {
   implement_width_m?: number;
   total_gps_points: number;
   session_duration_minutes?: number;
+  billable_hours?: number | null;
+  charge_unit?: ChargeUnit | null;
   operation_type: string;
   status: string;
 }
@@ -147,7 +157,11 @@ export interface SessionSummaryReport {
   total_distance_m?: number | null;
   total_cost_inr?: number | null;
   charge_per_ha_applied?: number | null;
+  charge_unit?: ChargeUnit | null;
+  rate_currency?: string | null;
+  billable_hours?: number | null;
   cost_note?: string | null;
+  cost_finalized_at?: string | null;
   alerts: AlertSummaryItem[];
   field_observations: FieldObservationResponse[];
   observations_count: number;
@@ -201,6 +215,12 @@ export async function startSession(data: SessionStartRequest): Promise<SessionRe
 
 export async function stopSession(sessionId: string): Promise<SessionResponse> {
   const { data } = await api.post<SessionResponse>(`/sessions/${sessionId}/stop`, {});
+  return data;
+}
+
+/** Abandon a session without billing it: status becomes `aborted` and the charge is final at 0. */
+export async function cancelSession(sessionId: string): Promise<SessionResponse> {
+  const { data } = await api.post<SessionResponse>(`/sessions/${sessionId}/cancel`);
   return data;
 }
 
@@ -261,8 +281,10 @@ function normalizeSessionSummaryReport(raw: SessionSummaryReport): SessionSummar
   const area = parseReportNumber(r.area_ha ?? r.areaHa);
   const dist = parseReportNumber(r.total_distance_m ?? r.totalDistanceM);
   const duration = parseReportNumber(r.duration_minutes ?? r.durationMinutes);
+  const hours = parseReportNumber(r.billable_hours ?? r.billableHours);
   return {
     ...raw,
+    billable_hours: hours ?? raw.billable_hours ?? null,
     area_ha: area ?? raw.area_ha ?? null,
     total_distance_m: dist ?? raw.total_distance_m ?? null,
     duration_minutes: duration ?? raw.duration_minutes ?? null,

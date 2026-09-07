@@ -25,12 +25,20 @@ export const IOT_FEED_UI: Record<
   position_tracking: { label: 'Location', icon: 'map-pin' },
 };
 
-/** Grid order (excludes GPS — use GPSInfoPanel / Map). */
+/**
+ * Grid order (excludes GPS — use GPSInfoPanel / Map).
+ *
+ * `soil_moisture` held the fourth slot until vibration replaced it. Both feeds
+ * are still ingested and still raise alerts; this list only decides what the
+ * dashboard grid shows. Soil moisture also survives as a *manual* observation
+ * type on ActiveSessionScreen, which is a different thing from this telemetry
+ * feed and is deliberately untouched.
+ */
 export const IOT_METRIC_DISPLAY_ORDER: IoTFeedKey[] = [
   'forward_speed',
   'pto_shaft_speed',
   'depth_of_operation',
-  'soil_moisture',
+  'vibration',
   'field_capacity',
   'wheel_slip',
 ];

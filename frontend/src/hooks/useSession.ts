@@ -7,6 +7,7 @@ import {
   getSessions as fetchSessions,
   pauseSession as pauseSessionApi,
   resumeSession as resumeSessionApi,
+  cancelSession as cancelSessionApi,
   startSession as startSessionApi,
   stopSession as stopSessionApi,
   type FieldObservationCreate,
@@ -92,8 +93,9 @@ export function useSessionActions() {
   const stopSession = useCallback((sessionId: string) => run(() => stopSessionApi(sessionId)), [run]);
   const pauseSession = useCallback((sessionId: string) => run(() => pauseSessionApi(sessionId)), [run]);
   const resumeSession = useCallback((sessionId: string) => run(() => resumeSessionApi(sessionId)), [run]);
+  const cancelSession = useCallback((sessionId: string) => run(() => cancelSessionApi(sessionId)), [run]);
 
-  return { startSession, stopSession, pauseSession, resumeSession, isLoading, error };
+  return { startSession, stopSession, pauseSession, resumeSession, cancelSession, isLoading, error };
 }
 
 export function useSessionDetail(sessionId: string | null) {
@@ -268,7 +270,9 @@ export function useGPSPath(sessionId: string | null) {
       intervalRef.current = null;
     }
 
-    if (sessionId && session?.status === 'active') {
+    // Telemetry keeps attaching while a session is paused, so the trail keeps growing.
+    // Polling only while `active` froze the map mid-pause.
+    if (sessionId && (session?.status === 'active' || session?.status === 'paused')) {
       intervalRef.current = setInterval(() => {
         void fetchPath();
       }, 30000);

@@ -22,6 +22,17 @@ export async function getAccessToken(): Promise<string | null> {
   return AsyncStorage.getItem(KEY_ACCESS);
 }
 
+/**
+ * Replace only the access token, leaving the refresh token and user untouched.
+ *
+ * `POST /auth/refresh` returns a new access token and deliberately does not rotate the
+ * refresh token, so `persistSession` (which requires a full LoginResponse) cannot be
+ * used for it.
+ */
+export async function setAccessToken(token: string): Promise<void> {
+  await AsyncStorage.setItem(KEY_ACCESS, token);
+}
+
 export async function getRefreshToken(): Promise<string | null> {
   return AsyncStorage.getItem(KEY_REFRESH);
 }

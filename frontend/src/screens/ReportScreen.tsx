@@ -29,21 +29,13 @@ import { Button } from '../components/common/Button';
 import { Card } from '../components/common/Card';
 import { useAuth } from '../contexts/AuthContext';
 import { colors } from '../constants/colors';
+import { OPERATION_TYPES } from '../constants/operations';
 import { getReportSummary, type ReportSummary } from '../services/ReportService';
 import { downloadSessionExport } from '../services/SessionService';
 import { borderRadius, spacing, typography } from '../theme';
 import { fmtAreaHa } from '../utils/formatters';
 
-const OPERATIONS = [
-  'All',
-  'Tillage',
-  'Sowing',
-  'Spraying',
-  'Weeding',
-  'Harvesting',
-  'Threshing',
-  'Grading',
-] as const;
+const OPERATIONS = ['All', ...OPERATION_TYPES] as const;
 
 const VIEW_MODES = ['Summary', 'Day-wise', 'Time-wise'] as const;
 
@@ -524,7 +516,7 @@ export function ReportScreen() {
                         {fmtArea(session.area_ha)} · {session.operator_name}
                       </Text>
                       <Text style={styles.sessionMeta}>
-                        Charges: {fmtCurrency(session.total_cost_inr ?? session.wage_total)}
+                        Charges: {fmtCurrency(session.total_cost_inr)}
                       </Text>
                     </Pressable>
                     <Pressable
@@ -592,7 +584,7 @@ export function ReportScreen() {
                     {session.operation_type}
                   </Text>
                   <Text style={[styles.timeCell, styles.timeColArea]}>{fmtArea(session.area_ha)}</Text>
-                  <Text style={[styles.timeCell, styles.timeColDuration]}>{fmtCurrency(session.total_cost_inr ?? session.wage_total)}</Text>
+                  <Text style={[styles.timeCell, styles.timeColDuration]}>{fmtCurrency(session.total_cost_inr)}</Text>
                 </Pressable>
               ))}
             </Card>

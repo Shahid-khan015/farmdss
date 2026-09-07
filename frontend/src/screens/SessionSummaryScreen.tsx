@@ -24,7 +24,8 @@ import { useImplements } from '../hooks/useImplements';
 import { useTractors } from '../hooks/useTractors';
 import { downloadSessionExport, getAreaSummary, getSessionReport, type SessionSummaryReport } from '../services/SessionService';
 import { borderRadius, spacing, typography } from '../theme';
-import { fmtAreaHa } from '../utils/formatters';
+import { chargeUnitFor, unitSuffix } from '../constants/operations';
+import { fmtAreaHa, fmtCurrencyInr, fmtHours } from '../utils/formatters';
 
 function fmtDate(v?: string) {
   if (!v) return '-';
@@ -75,26 +76,10 @@ function fmtMetricValue(value?: number | null, unit?: string): string {
   return `${value.toFixed(precision)}${unit ? ` ${unit}` : ''}`;
 }
 
-function fmtCurrencyInr(value?: number | null | string): string {
-  const n = typeof value === 'string' ? Number(value) : value;
-  if (n == null || !Number.isFinite(n)) return '--';
-  return `₹ ${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
 function toNum(value: unknown): number | null {
   if (value == null) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
-}
-
-function isBillingPerHour(operationType?: string | null): boolean {
-  const o = (operationType ?? '').trim().toLowerCase();
-  return o === 'threshing' || o === 'grading';
-}
-
-function fmtBillableHours(hours: number | null): string {
-  if (hours == null || !Number.isFinite(hours)) return '--';
-  return `${hours.toFixed(2)} h`;
 }
 
 function statusBadgeStyles(status: string) {
@@ -363,33 +348,28 @@ export function SessionSummaryScreen() {
   const fallbackAvgSpeedUnit =
     metricsByFeed.forward_speed?.unit ?? sessionFeedsMap.forward_speed?.unit ?? 'km/h';
 
-  /** Prefer API totals; derive rate × area (ha) or rate × hours (Threshing/Grading) when total missing. */
-  const resolvedOperationBilling = useMemo(() => {
-    const rate =
-      toNum(report?.charge_per_ha_applied) ?? toNum(session?.charge_per_ha_applied);
-    const area = toNum(areaHa) ?? toNum(report?.area_ha) ?? toNum(session?.area_ha);
-    const apiTotal = toNum(report?.total_cost_inr) ?? toNum(session?.total_cost_inr);
-    const perHour = isBillingPerHour(session?.operation_type);
-
-    let durationMinutes: number | null =
-      toNum(report?.duration_minutes) ?? toNum(session?.total_duration_minutes) ?? null;
-    if (durationMinutes == null && session?.ended_at && session?.started_at) {
-      const ms = new Date(session.ended_at).getTime() - new Date(session.started_at).getTime();
-      durationMinutes = Number.isFinite(ms) && ms >= 0 ? ms / 60000 : null;
-    }
-    const hours =
-      durationMinutes != null && Number.isFinite(durationMinutes) ? durationMinutes / 60 : null;
-
-    if (apiTotal != null) {
-      return { rate, area, hours, perHour, total: apiTotal };
-    }
-    if (perHour && rate != null && hours != null) {
-      return { rate, area, hours, perHour, total: Math.round(rate * hours * 100) / 100 };
-    }
-    if (!perHour && rate != null && area != null) {
-      return { rate, area, hours, perHour, total: Math.round(rate * area * 100) / 100 };
-    }
-    return { rate, area, hours, perHour, total: null as number | null };
+  /**
+   * The charge as the server settled it. This screen does no arithmetic.
+   *
+   * It used to: when the API total was null it derived `rate x hours` or `rate x area`
+   * itself, with its own rounding and its own wall-clock (pause-inclusive) hours, and
+   * showed the result under a lock icon reading "System computed - not editable". That
+   * made the screen a second billing engine that could disagree with the stored charge.
+   * The quantities below are displayed so the multiplication can be checked by eye, not
+   * so it can be reproduced here.
+   */
+  const billing = useMemo(() => {
+    const total = toNum(report?.total_cost_inr) ?? toNum(session?.total_cost_inr);
+    const rate = toNum(report?.charge_per_ha_applied) ?? toNum(session?.charge_per_ha_applied);
+    // The unit is locked onto the session at start; the name-based rule is a fallback for
+    // sessions that predate that column.
+    const chargeUnit =
+      report?.charge_unit ?? session?.charge_unit ?? chargeUnitFor(session?.operation_type);
+    const perHour = chargeUnit === 'per_hour';
+    const area = toNum(report?.area_ha) ?? toNum(session?.area_ha) ?? toNum(areaHa);
+    const hours = toNum(report?.billable_hours) ?? toNum(session?.billable_hours);
+    const isFinal = (report?.cost_finalized_at ?? session?.cost_finalized_at) != null;
+    return { total, rate, chargeUnit, perHour, area, hours, isFinal };
   }, [report, session, areaHa]);
 
   if (isLoading) return <LoadingSpinner />;
@@ -477,7 +457,9 @@ export function SessionSummaryScreen() {
           <Text style={styles.metaText}>
             Implement width: {implementWidthM != null ? `${implementWidthM.toFixed(1)} m` : 'N/A'}
           </Text>
-          <Text style={styles.metaText}>Method: GPS path (Shoelace + implement width)</Text>
+          <Text style={styles.metaText}>
+            Method: GPS path length × implement width (paused travel excluded)
+          </Text>
           <Text style={styles.metaText}>{report?.total_alerts != null ? `${report.total_alerts} alerts in this session` : `${alerts.length} alerts in this session`}</Text>
           <Text style={styles.metaText}>
             {report?.metrics?.length ? `${report.metrics.length} tracked sensor metrics captured` : 'No sensor metrics captured'}
@@ -632,33 +614,29 @@ export function SessionSummaryScreen() {
           <View style={styles.detailRow}>
             <Text style={styles.detailKey}>Rate</Text>
             <Text style={styles.detailValue}>
-              {resolvedOperationBilling.rate != null
-                ? `${fmtCurrencyInr(resolvedOperationBilling.rate).replace('.00', '')}${
-                    resolvedOperationBilling.perHour ? '/hr' : '/ha'
-                  }`
+              {billing.rate != null
+                ? `${fmtCurrencyInr(billing.rate)}/${unitSuffix(billing.chargeUnit)}`
                 : '--'}
             </Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailKey}>
-              {resolvedOperationBilling.perHour ? 'Billable time' : 'Area Covered'}
+              {billing.perHour ? 'Billable time (excl. pauses)' : 'Area Covered'}
             </Text>
             <Text style={styles.detailValue}>
-              {resolvedOperationBilling.perHour
-                ? fmtBillableHours(resolvedOperationBilling.hours)
-                : fmtArea(resolvedOperationBilling.area ?? null)}
+              {billing.perHour ? fmtHours(billing.hours) : fmtArea(billing.area ?? null)}
             </Text>
           </View>
           <View style={styles.calcDivider} />
           <View style={styles.calcFormulaRow}>
             <Text style={styles.calcFormulaText}>
-              {resolvedOperationBilling.perHour
-                ? resolvedOperationBilling.rate != null && resolvedOperationBilling.hours != null
-                  ? `${fmtCurrencyInr(resolvedOperationBilling.rate).replace('.00', '')} × ${resolvedOperationBilling.hours.toFixed(2)} h`
-                  : 'Waiting for session duration / hourly rate'
-                : resolvedOperationBilling.rate != null && resolvedOperationBilling.area != null
-                  ? `${fmtCurrencyInr(resolvedOperationBilling.rate).replace('.00', '')} × ${resolvedOperationBilling.area.toFixed(4)} ha`
-                  : 'Waiting for finalized area/rate'}
+              {billing.perHour
+                ? billing.rate != null && billing.hours != null
+                  ? `${fmtCurrencyInr(billing.rate)} × ${billing.hours.toFixed(2)} h`
+                  : 'Charge is calculated when the session ends'
+                : billing.rate != null && billing.area != null
+                  ? `${fmtCurrencyInr(billing.rate)} × ${billing.area.toFixed(4)} ha`
+                  : 'Charge is calculated when the session ends'}
             </Text>
             <Text style={styles.calcFormulaText}>=</Text>
           </View>
@@ -667,19 +645,21 @@ export function SessionSummaryScreen() {
               <Text style={styles.totalChargeLabel}>Total Charges</Text>
               <Feather name="lock" size={14} color={colors.muted} />
             </View>
-            {reportLoading && resolvedOperationBilling.total == null ? (
+            {reportLoading && billing.total == null ? (
               <View style={styles.loadingRow}>
                 <ActivityIndicator color={colors.primary} />
                 <Text style={styles.metaText}>Calculating...</Text>
               </View>
             ) : (
               <Text style={styles.totalChargeValue}>
-                {resolvedOperationBilling.total != null
-                  ? fmtCurrencyInr(resolvedOperationBilling.total).replace('.00', '')
-                  : '--'}
+                {billing.total != null ? fmtCurrencyInr(billing.total) : 'Pending'}
               </Text>
             )}
-            <Text style={styles.totalChargeFootnote}>System computed - not editable</Text>
+            <Text style={styles.totalChargeFootnote}>
+              {billing.isFinal
+                ? 'Final charge - calculated by the system at session end'
+                : 'Charge is finalised when the session ends'}
+            </Text>
             {report?.cost_note || session.cost_note ? (
               <Text style={styles.metaText}>{report?.cost_note ?? session.cost_note}</Text>
             ) : null}

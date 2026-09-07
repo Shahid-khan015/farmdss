@@ -34,7 +34,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.core.constants import (
+    FI_FACTOR_BY_TEXTURE,
     GRAVITY,
+    MAX_SLIP_PCT,
+    SLIP_INITIAL_PCT,
     KI_RANGE,
     ROTOR_EFFICIENCY_RANGE,
 )
@@ -59,6 +62,8 @@ from app.core.legacy_algorithms import (
     front_ballast_required_kg,
     rear_ballast_required_kg,
     solve_slip,
+    traction_efficiency_at_slip_pct,
+    traction_efficiency_envelope_percent,
     traction_efficiency_percent,
     wheel_response,
 )
@@ -200,6 +205,11 @@ class PassivePassiveInputs(_TractorCommon):
     tool_1: PassiveToolInputs = None  # type: ignore[assignment]
     tool_2: PassiveToolInputs = None  # type: ignore[assignment]
     interaction_coefficient: float = 0.0  # ki, 0.00-0.25 (DSS Section 4.2)
+    #: Field-capacity swath width, overriding the default max(width_1, width_2).
+    #: Both reference HTML tools expose this as an operator-settable field for
+    #: passive-passive setups that aren't simple tandem coverage; None (the
+    #: default) preserves today's max()-based behaviour exactly.
+    effective_width_override_m: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -480,7 +490,14 @@ def calculate_passive_passive_performance(inputs: PassivePassiveInputs) -> dict:
     bnf, mr_ratio = wheels.bn_front, wheels.mr_ratio
     pet_n = _engine_torque_limit(inputs, wheels=wheels, rd_n=rd_n, fd_n=fd_n, draft_n=d_total, warnings=warnings)
 
-    working_width_m = max(t1.width_m, t2.width_m)
+    # DSS Section 4 gives no formula for combi swath width; both reference HTML
+    # tools default to the wider tool's width and let the operator override it
+    # for non-tandem coverage. Mirrored exactly: an override is used only when
+    # it is a genuine positive width, matching the HTML's own
+    # `Number.isFinite(override) && override > 0` guard rather than trusting
+    # the caller unconditionally.
+    override = inputs.effective_width_override_m
+    working_width_m = override if override is not None and override > 0 else max(t1.width_m, t2.width_m)
     capacity = field_capacity(
         speed_kmh=inputs.speed_kmh,
         width_m=working_width_m,
@@ -541,11 +558,15 @@ def calculate_passive_passive_performance(inputs: PassivePassiveInputs) -> dict:
     fuel_cons_l_per_ha = power.fuel_l_per_ha
     overall_pct = power.overall_pct
 
+    # Fi is global per soil texture (see constants.FI_FACTOR_BY_TEXTURE), so the
+    # combination shares one value regardless of how many tools it carries. Table
+    # 4.2 needs it only to pick the mu ceiling's soil condition.
+    combi_fi = FI_FACTOR_BY_TEXTURE[inputs.soil_texture.value]
     envelope = result_envelope(
         slip=slip,
-        draft_n=d_total,
-        te_pct=te_pct,
-        fuel_l_per_ha=fuel_cons_l_per_ha,
+        net_traction_coefficient=slip_solution.mu,
+        front_weight_utilization=kwf,
+        fi=combi_fi,
         put_pct=pused_pct,
         field_eff_pct=field_eff_pct,
         converged=slip_solution.converged,
@@ -587,14 +608,33 @@ def calculate_passive_passive_performance(inputs: PassivePassiveInputs) -> dict:
         "confidence": confidence,
         "recommendation_messages": envelope.recommendation_messages,
         "converged": slip_solution.converged,
+        "slip_stepped": slip_solution.stepped_slip_pct,
+        "slip_assumed_start_pct": SLIP_INITIAL_PCT,
+        "slip_limit_pct": MAX_SLIP_PCT,
+        "slip_hit_limit": not slip_solution.converged,
+        # Present in the legacy mode but previously missing here, so a combi run
+        # could not explain its own actual field capacity.
+        "legacy_turning_time_seconds": capacity.turning_time_s,
+        "legacy_number_of_turns": capacity.number_turns,
         # Front ballast fitted to keep a front-lifting combination answerable;
         # non-zero means the figures above are conditional on carrying it.
         "stabilising_front_ballast_kg": axles.stabilising_ballast_kg,
         "infeasible_without_ballast": axles.infeasible_without_ballast,
         "engine_torque_limited_pull": pet_n,
         "fuel_l_per_hour": power.fuel_lph,
+        # Which power the fuel figure is billed against. Explicit so a consumer
+        # never has to infer it -- this basis changed once already.
+        "fuel_basis": power.fuel_basis,
         "fuel_l_per_hour_pto_basis": power.fuel_lph_pto_basis,
+        # Diagnostic: the spreadsheet's SFC x DBp basis, kept so a run stays
+        # reconcilable cell-for-cell against the workbook. Feeds nothing.
+        "fuel_l_per_hour_drawbar_basis": power.fuel_lph_drawbar_basis,
         "legacy_field_efficiency_raw": capacity.field_eff_raw_pct,
+        # Diagnostics only. The headland time actually used carries an undocumented
+        # factor of 2 that the spreadsheet's C71 does not have; both bases are
+        # reported so the unresolved discrepancy is visible. See A15.
+        "headland_turning_time_hours": capacity.total_turning_time_h,
+        "headland_turning_time_single_pass_basis_hours": capacity.turning_time_single_pass_basis_h,
         "legacy_front_axle_load_n": fd_n,
         "legacy_rear_axle_load_n": rd_n,
         "legacy_mobility_number_rear": slip_solution.bn_rear,
@@ -603,13 +643,19 @@ def calculate_passive_passive_performance(inputs: PassivePassiveInputs) -> dict:
         # Gross traction ratio developed AT the operating slip -- the denominator
         # Eq. 3.2 actually calls for. Reported so the TE figure is checkable.
         "gross_traction_at_slip": gross_traction_at_slip(slip_solution.bn_rear, slip / 100.0, mu_g=slip_solution.mu_g),
-        # TE computed the way both reference implementations do it, dividing by the
-        # Brixius envelope instead. Diagnostic ONLY -- it is the known-incorrect
-        # form (see SIMULATION_ENGINE_FORMULAS.md A9) and drives nothing. Present
-        # so a number-for-number comparison against those references is explainable
-        # without re-deriving it by hand.
-        "traction_efficiency_reference_basis": (
-            slip_solution.mu * (1.0 - slip / 100.0) / slip_solution.mu_g * 100.0 if slip_solution.mu_g else 0.0
+        # TE divided by the gross traction ratio developed AT the operating slip --
+        # the engine's former primary. Diagnostic ONLY; the specification's Eq. (3.2)
+        # divides by the envelope. See "RESOLVED: tractive-efficiency denominator".
+        "traction_efficiency_at_slip_percent": traction_efficiency_at_slip_pct(
+            slip_solution.mu,
+            slip_solution.mu_g,
+            slip / 100.0,
+            bn_rear=slip_solution.bn_rear,
+        ),
+        # Retained for compatibility: now identical to the headline
+        # `traction_efficiency`, since the envelope IS the specified basis.
+        "traction_efficiency_reference_basis": traction_efficiency_envelope_percent(
+            slip_solution.mu, slip_solution.mu_g, slip / 100.0
         ),
         "motion_resistance_ratio": mr_ratio,
         "motion_resistance": mr_ratio,
@@ -903,11 +949,15 @@ def calculate_active_passive_performance(inputs: ActivePassiveInputs) -> dict:
     fuel_cons_l_per_ha = power.fuel_l_per_ha
     overall_pct = power.overall_pct
 
+    # Fi is global per soil texture (see constants.FI_FACTOR_BY_TEXTURE), so the
+    # combination shares one value regardless of how many tools it carries. Table
+    # 4.2 needs it only to pick the mu ceiling's soil condition.
+    combi_fi = FI_FACTOR_BY_TEXTURE[inputs.soil_texture.value]
     envelope = result_envelope(
         slip=slip,
-        draft_n=d_eff,
-        te_pct=te_pct,
-        fuel_l_per_ha=fuel_cons_l_per_ha,
+        net_traction_coefficient=slip_solution.mu,
+        front_weight_utilization=kwf,
+        fi=combi_fi,
         put_pct=pused_pct,
         field_eff_pct=field_eff_pct,
         converged=slip_solution.converged,
@@ -952,6 +1002,14 @@ def calculate_active_passive_performance(inputs: ActivePassiveInputs) -> dict:
         "confidence": confidence,
         "recommendation_messages": envelope.recommendation_messages,
         "converged": slip_solution.converged,
+        "slip_stepped": slip_solution.stepped_slip_pct,
+        "slip_assumed_start_pct": SLIP_INITIAL_PCT,
+        "slip_limit_pct": MAX_SLIP_PCT,
+        "slip_hit_limit": not slip_solution.converged,
+        # Present in the legacy mode but previously missing here, so a combi run
+        # could not explain its own actual field capacity.
+        "legacy_turning_time_seconds": capacity.turning_time_s,
+        "legacy_number_of_turns": capacity.number_turns,
         # Front ballast fitted to keep a front-lifting combination answerable;
         # non-zero means the figures above are conditional on carrying it.
         "stabilising_front_ballast_kg": axles.stabilising_ballast_kg,
@@ -959,8 +1017,19 @@ def calculate_active_passive_performance(inputs: ActivePassiveInputs) -> dict:
         "engine_torque_limited_pull": pet_n,
         "pto_power_fraction_effective": x_eff,
         "fuel_l_per_hour": power.fuel_lph,
+        # Which power the fuel figure is billed against. Explicit so a consumer
+        # never has to infer it -- this basis changed once already.
+        "fuel_basis": power.fuel_basis,
         "fuel_l_per_hour_pto_basis": power.fuel_lph_pto_basis,
+        # Diagnostic: the spreadsheet's SFC x DBp basis, kept so a run stays
+        # reconcilable cell-for-cell against the workbook. Feeds nothing.
+        "fuel_l_per_hour_drawbar_basis": power.fuel_lph_drawbar_basis,
         "legacy_field_efficiency_raw": capacity.field_eff_raw_pct,
+        # Diagnostics only. The headland time actually used carries an undocumented
+        # factor of 2 that the spreadsheet's C71 does not have; both bases are
+        # reported so the unresolved discrepancy is visible. See A15.
+        "headland_turning_time_hours": capacity.total_turning_time_h,
+        "headland_turning_time_single_pass_basis_hours": capacity.turning_time_single_pass_basis_h,
         "legacy_front_axle_load_n": fd_n,
         "legacy_rear_axle_load_n": rd_n,
         "legacy_mobility_number_rear": slip_solution.bn_rear,
@@ -969,13 +1038,19 @@ def calculate_active_passive_performance(inputs: ActivePassiveInputs) -> dict:
         # Gross traction ratio developed AT the operating slip -- the denominator
         # Eq. 3.2 actually calls for. Reported so the TE figure is checkable.
         "gross_traction_at_slip": gross_traction_at_slip(slip_solution.bn_rear, slip / 100.0, mu_g=slip_solution.mu_g),
-        # TE computed the way both reference implementations do it, dividing by the
-        # Brixius envelope instead. Diagnostic ONLY -- it is the known-incorrect
-        # form (see SIMULATION_ENGINE_FORMULAS.md A9) and drives nothing. Present
-        # so a number-for-number comparison against those references is explainable
-        # without re-deriving it by hand.
-        "traction_efficiency_reference_basis": (
-            slip_solution.mu * (1.0 - slip / 100.0) / slip_solution.mu_g * 100.0 if slip_solution.mu_g else 0.0
+        # TE divided by the gross traction ratio developed AT the operating slip --
+        # the engine's former primary. Diagnostic ONLY; the specification's Eq. (3.2)
+        # divides by the envelope. See "RESOLVED: tractive-efficiency denominator".
+        "traction_efficiency_at_slip_percent": traction_efficiency_at_slip_pct(
+            slip_solution.mu,
+            slip_solution.mu_g,
+            slip / 100.0,
+            bn_rear=slip_solution.bn_rear,
+        ),
+        # Retained for compatibility: now identical to the headline
+        # `traction_efficiency`, since the envelope IS the specified basis.
+        "traction_efficiency_reference_basis": traction_efficiency_envelope_percent(
+            slip_solution.mu, slip_solution.mu_g, slip / 100.0
         ),
         "motion_resistance_ratio": mr_ratio,
         "motion_resistance": mr_ratio,

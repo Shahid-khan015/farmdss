@@ -32,13 +32,16 @@ ROLLING_RESISTANCE_BASE = 0.04  # [DSS-EXACT]
 ROLLING_RESISTANCE_SLIP_COEFF = 0.5  # [DSS-EXACT]
 TRACTION_MU_G_SCALE = 0.88  # [DSS-EXACT]
 TRACTION_BN_EXPONENT_COEFF = 0.1  # [DSS-EXACT]
-# [DSS-AMBIGUOUS -> IMPLEMENTATION-ASSUMPTION]
+# [REFERENCE-CONFIRMED] -- was DSS-AMBIGUOUS until the spreadsheet formulas were read.
 # The DSS document's Eq. 3.9 image literally shows exp(-0.3*S). Implemented
 # literally, mu stays near zero across the whole practical 2-20% slip range, so
 # the slip solver never converges for any realistic input -- in any of the three
-# modes. 7.5 is the standard Wismer-Luth/Brixius literature value and produces
-# physically realistic traction curves. Confirmed with the user as a corrected
-# transcription, not a literal DSS value. This is the single place it is defined.
+# modes. 7.5 is the standard Wismer-Luth/Brixius literature value.
+#
+# This is no longer an assumption: the spreadsheet's own cell formula uses 7.5
+# explicitly -- `C58 = C57*(1-EXP(-7.5*C55))-(1/C52)-(0.5*C55)/(SQRT(C52))` -- as
+# does `tillage_dss.html` (K.TRACTION_SLIP_EXPONENT_COEFF). The document's 0.3 is
+# a transcription error in the equation image. This is the single place it is defined.
 TRACTION_SLIP_EXPONENT_COEFF = 7.5
 
 # --- Ballast requirement targets (DSS spec) ---
@@ -75,38 +78,62 @@ PY_OVER_D_RATIO_BY_IMPLEMENT = {
 # tools -- `A = 32, B = 1.9, C = 0` is D497's secondary-tillage field cultivator,
 # which is a per-tool row.
 #
-# Reading `W` as metres for a cultivator yields a draft of ~505 N/m at every
-# size -- the width cancels, so the figure carries no information -- against
-# ~1975 N/m for a disc plough and ~4050 N/m for a disc harrow. It also drops a
-# 9-tine cultivator's total draft below a rotavator's forward thrust, which makes
-# the effective draft of an active-passive combination non-positive and fails the
-# run outright. Per-tool gives a consistent ~2070 N/m across sizes.
+# **Reverted to metres-for-every-implement**, to match `docs/tillage_dss (2).html`'s
+# engine exactly (its `draftForceN` takes only `widthM`, with no tool-count concept
+# at all). This re-admits a known, previously-fixed defect: reading `W` as metres for
+# a cultivator gives a draft of ~505 N/m at every size -- the width cancels, so the
+# figure carries no information -- against ~1975 N/m for a disc plough and
+# ~4050 N/m for a disc harrow, and drops a 9-tine cultivator's total draft (measured
+# ~4.97x too low against the per-tool reading) below a rotavator's forward thrust in
+# active-passive combinations, making `Deff` non-positive and failing the run
+# outright. Per-tool gave a consistent ~2070 N/m across sizes -- that fidelity is
+# what this reversion gives up.
 #
-# Both reference implementations use metres for every implement; this is a
-# deliberate, documented divergence from them. Field capacity, turning and swath
-# always use the width in metres -- only Eq. 3.1's `W` is affected.
-DRAFT_WIDTH_IS_TOOL_COUNT = frozenset({"Cultivator"})
+# Kept as an empty frozenset (not deleted) so `draft_width_parameter` and
+# `draft_width_is_tool_count` need no changes: both already fall back to metres for
+# any implement type absent from this set. Field capacity, turning and swath always
+# use the width in metres regardless -- only Eq. 3.1's `W` was ever affected.
+DRAFT_WIDTH_IS_TOOL_COUNT = frozenset()
 
-# --- Soil-texture adjustment factor F (DSS Eq. 3.1) ---
-# [REFERENCE-ALIGNED] One factor per soil texture, applied to every implement.
-# Keyed by SoilTexture.value.
+# --- Soil-texture adjustment factor F (DSS Eq. 3.1) ---  [EXTERNAL-MODEL, ASABE D497 Table 1]
+# Per-implement, per-texture. Keyed by ImplementType.value -> {SoilTexture.value: Fi}.
 #
-# This is the reference stack's Fi, adopted deliberately so that the engine, the
-# spreadsheet and the HTML tool agree. Its authority is the spreadsheet
-# `docs/Tractor_Implement_Performance_Calculator Updated.xlsx`, sheet "tractor
-# and implement data" cells D50:F53 -- a three-row Soil Type/Fi table with no
-# implement dimension -- and `docs/tillage_dss (2).html`, which hard-codes the
-# same three values in its texture selector.
+# **Currently unused** -- `legacy_algorithms.fi_factor` no longer reads this table.
+# It was reinstated for one session (`farmdss/Rakesh Dss/Front _screen.frm`,
+# Command6_Click lines 3011-3059, the 2006 VB6 tool this whole DSS derives from,
+# independently carries this exact per-implement table -- confirmed from its own
+# soil-texture radio buttons, Option6=Fine/Option7=Coarse/Option8=Medium, lines
+# 193-222), then **reverted** in the next session so the engine matches
+# `docs/tillage_dss (2).html` exactly -- that HTML reads Fi from a single texture
+# selector with no implement dimension at all (see `FI_FACTOR_BY_TEXTURE` below,
+# now used for the draft equation again, not just Table 4.2).
 #
-# Known departure from ASABE D497: D497 Table 1 carries its own F1/F2/F3 per
-# implement row (disc tools 1.0/0.88/0.78, cultivators 1.0/0.85/0.65), and these
-# three values are specifically its *moldboard-plough* row. Using them for every
-# implement therefore understates draft on non-moldboard tools in non-fine soil
-# -- most steeply for disc tools in coarse soil, where Fi falls 0.78 -> 0.45 and
-# draft with it (0.577x), carrying slip, power utilisation and fuel down with it.
-# MB Plough is unaffected in every texture, as is fine soil for every implement.
-# This is an accepted, deliberate trade of D497 fidelity for cross-tool
-# consistency; see docs/SIMULATION_ENGINE_FORMULAS.md.
+# Left defined, not deleted: this is a one-line revert
+# (`fi_factor` back to `FI_FACTOR_BY_IMPLEMENT_TYPE[implement_type.value][...]`) if
+# ASABE D497 fidelity is ever prioritised over HTML parity again. Flattening
+# understates draft on non-moldboard tools in non-fine soil -- most steeply for disc
+# tools in coarse soil, where Fi reads 0.45 instead of this table's 0.78 (draft
+# 1.733x lower). MB Plough and fine soil are numerically unchanged either way.
+FI_FACTOR_BY_IMPLEMENT_TYPE = {
+    "MB Plough": {"Fine": 1.0, "Medium": 0.70, "Coarse": 0.45},
+    "Disc Plough": {"Fine": 1.0, "Medium": 0.88, "Coarse": 0.78},
+    "Disc Harrow": {"Fine": 1.0, "Medium": 0.88, "Coarse": 0.78},
+    "Cultivator": {"Fine": 1.0, "Medium": 0.85, "Coarse": 0.65},
+}
+
+# [REFERENCE-ALIGNED] One factor per soil texture, applied to every implement --
+# **reverted to being Eq. 3.1's draft Fi again**, to match `docs/tillage_dss (2).html`
+# exactly: its `readCommonInputs` reads Fi from one texture selector
+# (`fi: parseFloat(...)`), with no implement dimension. It is *also* still what Table
+# 4.2's soil-condition classification uses (`soil_condition_from_fi` /
+# `FI_TO_SOIL_CONDITION_BOUNDS` below) -- with `fi_factor` reverted, these two uses
+# are the same value again, so there is no separate texture-only variable to keep in
+# sync any more (see `calculate_legacy_performance`, which used to compute one).
+#
+# This is the flattened MB-Plough row the reference stack (spreadsheet D50:F53,
+# `tillage_dss (2).html`) hard-codes; `FI_TO_SOIL_CONDITION_BOUNDS`'s 0.85/0.55
+# thresholds are calibrated against exactly this set and must not be re-tuned if
+# this table's values ever change.
 FI_FACTOR_BY_TEXTURE = {"Fine": 1.0, "Medium": 0.70, "Coarse": 0.45}
 
 # --- ASABE (2001) specific fuel consumption ---  [DSS-EXACT]
@@ -126,14 +153,51 @@ PTO_POWER_MIN_KW = 5.0
 # --- Power-utilization status bands (DSS "Check Put value" table) ---  [DSS-EXACT]
 PUT_PROPERLY_LOADED_RANGE = (95.0, 100.0)
 
+# --- DSS Table 4.2 advisory thresholds ---  [DSS-EXACT]
+# "Checking conditions and corresponding messages for different parameters": four
+# conditions, each with its own literal message. See engineering_validation.
+TABLE_4_2_SLIP_LIMIT_PCT = 15.0
+TABLE_4_2_KWEF_MIN = 0.20
+TABLE_4_2_PUT_LIMIT_PCT = 100.0
+
+# [LEGACY -- VB6-sourced, not in DSS Table 4.2.] `Front _screen.frm` (Command6_Click,
+# lines 3194-3201) flags slip below this floor with its own message ("Increase depth
+# or speed of operation, Because slip is less than 8%"), reasoning that a run this far
+# under the 8-15% band the DSS itself treats as optimal is leaving available traction
+# unused. Table 4.2 (the DSS document's own advisory table) is silent on low slip --
+# not opposed to flagging it, just missing it -- so this is purely additive, and kept
+# distinct from the four DSS-EXACT messages so it is never mistaken for one.
+TABLE_4_2_SLIP_UNDERUTILIZED_PCT = 8.0
+
+# Net-traction-coefficient ceiling, by soil *condition*.  [DSS-EXACT values]
+MU_THRESHOLD_BY_SOIL_CONDITION = {"soft": 0.40, "medium": 0.55, "firm": 0.60}
+
+# [INTERPRETIVE MAPPING -- not specification.] Table 4.2's mu ceiling is indexed by
+# soil *condition* (soft / medium / firm-hard, a bearing-strength taxonomy), while
+# Eq. 3.1's Fi is indexed by soil *texture* (fine / medium / coarse). The DSS
+# document defines both and provides **no crosswalk between them**. Rather than ask
+# the operator for a second, overlapping soil classification, the texture already
+# selected is mapped on the common agronomic association of coarse/sandy soils with
+# lower bearing strength and fine/clay soils with higher.
+#
+# This is the weakest link in Table 4.2 and is worth confirming with the DSS author:
+# it decides which mu ceiling a run is judged against, and therefore whether the
+# "ballast rear axle" advice appears at all.
+FI_TO_SOIL_CONDITION_BOUNDS = ((0.85, "firm"), (0.55, "medium"))  # else "soft"
+
 # --- Field capacity / turning time ---
-# [LEGACY] Absent from the DSS document; preserved unchanged from the
-# pre-existing implementation. turning_time_s = 15.56 + 2.61*(W/S) - 1.41*S.
+# [REFERENCE-ALIGNED] -- was tagged LEGACY/"absent from the DSS document", which was
+# wrong. The turning-time expression is the spreadsheet's `C67 = 15.56 + 2.61*(C14/C18)
+# - 1.41*C18`, and the 50-95% field-efficiency clamp is its `C73 = MIN(MAX(...,50),95)`.
+# Both are reference-sourced, not inventions of the pre-existing implementation.
 TURNING_TIME_COEFF_CONST = 15.56
 TURNING_TIME_COEFF_WIDTH_OVER_SPEED = 2.61
 TURNING_TIME_COEFF_SPEED = 1.41
-TURNING_TIME_CLAMP = (8.0, 45.0)  # seconds
 FIELD_EFFICIENCY_CLAMP = (50.0, 95.0)  # percent
+
+# [LEGACY] These two clamps are genuinely engine-only: the spreadsheet applies
+# neither, and both originate in this implementation (mirrored by the HTML port).
+TURNING_TIME_CLAMP = (8.0, 45.0)  # seconds
 OVERALL_EFFICIENCY_CLAMP = (0.0, 100.0)
 # NOTE: there is deliberately no upper clamp on fuel per hectare. An earlier
 # FUEL_L_PER_HA_CLAMP = (0.0, 200.0) capped it, which neither reference does

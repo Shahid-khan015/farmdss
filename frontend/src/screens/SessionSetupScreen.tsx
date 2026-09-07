@@ -9,6 +9,7 @@ import { Button } from '../components/common/Button';
 import { Card } from '../components/common/Card';
 import { ErrorMessage } from '../components/common/ErrorMessage';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { OPERATION_TYPES, type OperationType } from '../constants/operations';
 import { colors } from '../constants/colors';
 import { useFarmers } from '../hooks/useFarmers';
 import { useImplements } from '../hooks/useImplements';
@@ -20,24 +21,6 @@ import type { FarmerOptionResponse } from '../types/auth';
 import type { Implement } from '../types/implement';
 import type { Tractor } from '../types/tractor';
 
-type OperationType =
-  | 'Tillage'
-  | 'Sowing'
-  | 'Spraying'
-  | 'Weeding'
-  | 'Harvesting'
-  | 'Threshing'
-  | 'Grading';
-
-const OPERATION_TYPES: OperationType[] = [
-  'Tillage',
-  'Sowing',
-  'Spraying',
-  'Weeding',
-  'Harvesting',
-  'Threshing',
-  'Grading',
-];
 
 function sourcePillLabel(isLibrary: boolean): string {
   return isLibrary ? 'Library' : 'Custom';

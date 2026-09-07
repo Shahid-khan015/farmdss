@@ -13,6 +13,7 @@ import { Card } from '../components/common/Card';
 import { Input } from '../components/common/Input';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { RoleGuard } from '../components/common/RoleGuard';
+import { OPERATION_TYPES, isPerHourOperation } from '../constants/operations';
 import { colors } from '../constants/colors';
 import {
   createOperationCharge,
@@ -22,21 +23,6 @@ import {
 } from '../services/SessionService';
 import { borderRadius, spacing, typography } from '../theme';
 
-const OPERATION_TYPES = [
-  'Tillage',
-  'Sowing',
-  'Spraying',
-  'Weeding',
-  'Harvesting',
-  'Threshing',
-  'Grading',
-] as const;
-
-const PER_HOUR_TYPES = new Set<string>(['Threshing', 'Grading']);
-
-function isPerHourOperation(operationType: string): boolean {
-  return PER_HOUR_TYPES.has(operationType);
-}
 
 function formatChargeSummary(charge: OperationChargeRead | undefined, operationType: string): string {
   if (!charge) return 'Not set';
@@ -132,7 +118,8 @@ export function OperationChargesScreen() {
         <Text style={styles.subtitle}>
           Set rates per hectare for field operations (Tillage, Sowing, etc.).{' '}
           <Text style={styles.subtitleStrong}>Threshing</Text> and{' '}
-          <Text style={styles.subtitleStrong}>Grading</Text> are billed per hour of session time (start to end).
+          <Text style={styles.subtitleStrong}>Grading</Text> are billed per hour of worked time (paused
+          time is not charged).
         </Text>
 
         {chargesQuery.isLoading ? <LoadingSpinner /> : null}
@@ -152,7 +139,7 @@ export function OperationChargesScreen() {
                     <Text style={styles.operationName}>{operationType}</Text>
                     <Text style={styles.operationCharge}>{formatChargeSummary(charge, operationType)}</Text>
                     {isPerHourOperation(operationType) ? (
-                      <Text style={styles.operationHint}>Per hour (session duration)</Text>
+                      <Text style={styles.operationHint}>Per hour (worked time, excl. pauses)</Text>
                     ) : null}
                   </View>
                   <Button

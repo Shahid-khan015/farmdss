@@ -86,6 +86,9 @@ function formatMetricValue(feedKey: IoTFeedKey, reading?: IoTFeedReading): strin
     case 'pto_shaft_speed':
       return value.toFixed(0);
     case 'field_capacity':
+    // Vibration arrives in g, where the alerting band is 3.0 warning / 5.0
+    // critical -- one decimal would round away the resolution that matters.
+    case 'vibration':
       return value.toFixed(2);
     default:
       return String(value);

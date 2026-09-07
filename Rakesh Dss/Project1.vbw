@@ -1,0 +1,6 @@
+Front_screen = 90, 39, 679, 556, C, 0, -12, 803, 655, C
+Tractor_specification = 22, 29, 791, 485, C, 30, 32, 678, 587, C
+Implement_specification = 0, 0, 0, 0, C, 158, 29, 689, 505, C
+Tire_specification = 0, 0, 0, 0, C, 40, 80, 521, 480, C
+Results = 12, 23, 720, 479, C, 30, -8, 724, 653, C
+Opening_screen = 110, 110, 699, 558, C, -171, -5, 834, 670, C

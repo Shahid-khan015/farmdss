@@ -50,9 +50,11 @@ automated gate.
 ## Environment gotchas
 
 - **Python 3.9.** Every module starts with `from __future__ import annotations`, so `X | None` and `list[...]` appear in annotations, but must not be used at runtime (no `match`, no runtime PEP 604 unions).
-- **SQLite fallback:** `app/database.py` silently falls back to `sqlite:///./tractor_dss.db` when Postgres is unreachable **and** `DEBUG=True`, and `main.py` then runs `Base.metadata.create_all` instead of migrations. A "working" app therefore doesn't prove Postgres or Alembic is healthy — check `engine.url` when debugging schema issues.
+- **SQLite fallback:** `app/database.py` falls back to `sqlite:///./tractor_dss.db` when Postgres is unreachable **and `ALLOW_SQLITE_FALLBACK=True`** (committed `backend/.env` sets it for local dev; `render.yaml` sets it False). It is deliberately *not* keyed off `DEBUG` any more — on a hosted service that silently booted the app onto an empty, ephemeral database that reported itself healthy. With the flag off, an unreachable database raises instead. `main.py` still runs `Base.metadata.create_all` on the SQLite path, so a "working" app doesn't prove Postgres or Alembic is healthy — check `GET /health/iot` (`database.dialect`, `database.sqlite_fallback_active`) when debugging schema issues.
+- `DATABASE_URL` is normalized by `normalize_database_url`: `postgres://` → `postgresql+psycopg2://` (SQLAlchemy 2 has no `postgres` dialect and fails at import), and `sslmode=require` is appended for non-local hosts.
+- **Logging:** `app/logging_config.py` installs a root stdout handler in `create_app`. Without it, uvicorn configures only its own `uvicorn.*` loggers and every `app.*` INFO/DEBUG is swallowed by `logging.lastResort` — which is why the ingestion pipeline used to fail silently in deployment. Level via `LOG_LEVEL`.
 - **Startup seeding:** `seed_library_if_empty` inserts a catalogue of library tractors/implements (`is_library=True`) on every startup if none exist.
-- `backend/.env` and `frontend/.env` are committed and contain real-shaped config; `.env.example` files referenced in the READMEs do not exist.
+- **`backend/.env` is gitignored and must stay that way** — it holds `AIO_KEY`, `SECRET_KEY` and the database password. Copy `backend/.env.example` and fill it in. It *used* to be committed, which put two real Adafruit keys into pushed history (commits `565cf6f`, `a1f0fb1`); if either is still the account's active key, regenerate it. `frontend/.env` is still committed and holds only `EXPO_PUBLIC_*` values, which are compiled into the app bundle and are therefore public by construction — never put a secret there.
 - Frontend `api.ts` rewrites `localhost` → `10.0.2.2` on Android unless `EXPO_PUBLIC_ANDROID_USE_ADB_REVERSE=true`, and downgrades `https://localhost` to `http`. Restart Expo after editing `.env`.
 
 ## Backend architecture
@@ -99,7 +101,18 @@ Important conventions when touching this code:
 
 ### IoT pipeline
 
-Ingestion is **in-process only**, started from `main.py` startup hooks behind `ENABLE_IOT_HTTP_POLLER` / `ENABLE_IOT_MQTT` (both need `AIO_USERNAME` + `AIO_KEY`), each on a daemon thread stopped via `app.state.iot_transport_stop`.
+Ingestion is **in-process only**, started from the `main.py` lifespan hook behind `ENABLE_IOT_HTTP_POLLER` / `ENABLE_IOT_MQTT` (both need `AIO_USERNAME` + `AIO_KEY`), each on a daemon thread stopped via `app.state.iot_transport_stop`. Every skip path logs a `WARNING` naming the missing precondition.
+
+Two things make this survive a host that suspends idle services:
+
+- **Session-gated cadence** — the poller checks for an attachable session each cycle and polls at `IOT_ACTIVE_POLL_INTERVAL_SEC` while one runs, `IOT_IDLE_POLL_INTERVAL_SEC` otherwise (`http_poller.choose_interval`). Set them equal to disable.
+- **Fetch-through** (`services/iot_live.py`) — `GET /iot/latest` pulls from Adafruit inline when its newest row is older than `IOT_STALE_AFTER_SEC`, so the first request after a spin-down returns live values instead of pre-sleep data. Lock + cooldown coalesce concurrent callers; every failure path is fail-open. `POST /sessions/start` fires the same refresh as a `BackgroundTask`.
+
+`GET /health/iot` is the diagnostic entry point: database dialect/host, whether the SQLite fallback engaged, whether credentials are set, thread liveness, last-cycle stats, and newest `device_timestamp` per feed. It exposes no secrets.
+
+Feeds are fetched **concurrently** with one process-wide `httpx.Client`, under a per-cycle wall-clock budget (`IOT_POLL_CYCLE_BUDGET_SEC`) so one unhealthy feed degrades only itself. `ingest_normalized_batch` resolves the session once, dedups in one `IN (...)` query and inserts in one flush — the earlier per-row version cost ~3 round trips per reading, which is invisible against localhost Postgres and seconds per cycle against a managed one.
+
+Readings attach to sessions with status **`active` or `paused`** (`ATTACHABLE_SESSION_STATUSES`); dropping paused telemetry punched holes in the GPS path and under-reported `finalize_session_area`. Alerts are evaluated only while `active`.
 
 ```
 transports/{http_poller,mqtt_subscriber}.py
